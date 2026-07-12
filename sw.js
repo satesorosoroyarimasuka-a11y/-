@@ -1,4 +1,4 @@
-const CACHE = 'bp-v19';
+const CACHE = 'bp-v20';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

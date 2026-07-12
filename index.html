@@ -682,20 +682,36 @@ function cancelSettings() {
   switchTab('program');
 }
 
-// ===== 週数自動算出（週平均+2.5kgペースから週数を計算）=====
+// ===== 週数自動算出（実力レベル・年齢に応じたエビデンスベースのペース）=====
 // 1RM増加ペース：1〜2週ごとに1.25〜2.5kgステップアップ
 const GAIN_STEP_MIN = 1.25;   // 最小ステップ
 const GAIN_STEP_MAX = 2.5;    // 最大ステップ
-const PLAN_RATE = 1.875;      // 計画用の週平均（1.25〜2.5の中央値）
+
+// エビデンスに基づく週あたり1RM伸びの目安。
+// 中級者(体重比1.0〜1.35)は月2.5〜5kg＝週0.6〜1.25kgが上限（初心者はより速い線形進行が可能）。
+// 45歳以上は回復力低下を考慮して2割引き（マスターズの周期化ガイドライン）。
+function planRatePerWeek(profile) {
+  const ratio = profile && profile.weight ? profile.currentMax / profile.weight : 1.2;
+  let rate;
+  if (ratio < 1.0) rate = 1.875;        // 初心者相当
+  else if (ratio < 1.35) rate = 1.0;    // 中級者
+  else rate = 0.6;                       // 上級者
+  if (profile && profile.age >= 45) rate *= 0.8;
+  return rate;
+}
 
 // 重量を1.25kg刻みに丸める
 function round125(x) { return Math.round(x / 1.25) * 1.25; }
 
-// 現状と目標から週数を算出。
-// ディロード週は進行しないため、1ステップが1.25〜2.5kgに収まる週数を選ぶ。
-function recommendWeeks(currentMax, targetMax) {
+// 現状と目標から週数を算出。ディロード週は進行しないため、
+// 1ステップが1.25〜2.5kgに収まり、かつ実力・年齢相応のペースに近い週数を選ぶ。
+// 16週(1メゾサイクルの上限)に収まらない目標は13週ブロックに分割し、
+// エビデンスペースで到達可能な中間マイルストーンを第1ブロックの目標として返す。
+// 戻り値: { weeks, milestone } — milestoneがnull以外なら分割ロードマップ。
+function recommendWeeks(currentMax, targetMax, profile) {
   const diff = targetMax - currentMax;
   if (diff <= 0) return null; // 目標が現状以下
+  const rate = planRatePerWeek(profile);
   let best = null, bestScore = Infinity;
   for (let total = 3; total <= 24; total++) {
     let prog = 0;
@@ -703,10 +719,15 @@ function recommendWeeks(currentMax, targetMax) {
     const steps = Math.max(1, prog - 1);   // 最初の進行週=現状、以降がステップ
     const avgStep = diff / steps;
     if (avgStep > GAIN_STEP_MAX) continue;  // 1ステップが2.5kg超→週数不足
-    const score = Math.abs(avgStep - PLAN_RATE) + total * 0.01; // 平均1.875kg/ステップに近く短いものを優先
+    const score = Math.abs(avgStep - rate) + total * 0.01; // 実力相応ペースに近く短いものを優先
     if (score < bestScore) { bestScore = score; best = total; }
   }
-  return best === null ? 24 : best;          // 24週でも届かない場合は最長
+  if (best !== null && best <= 16) return { weeks: best, milestone: null };
+  // 1ブロックで届かない → 13週ブロック + 中間マイルストーン
+  let milestone = round25(currentMax + rate * 13);
+  milestone = Math.max(round25(currentMax) + 2.5, Math.min(milestone, round25(targetMax)));
+  if (milestone >= targetMax) return { weeks: best === null ? 24 : best, milestone: null };
+  return { weeks: 13, milestone };
 }
 
 // 週ごとの推定1RMを返す関数を生成。
@@ -748,12 +769,20 @@ function updateWeeksProposal() {
     sub.textContent = '';
     return;
   }
-  const weeks = recommendWeeks(cur, tgt);
-  const diff = tgt - cur;
-  const perWeek = (diff / weeks).toFixed(2);
-  const months = (weeks / 4.345).toFixed(1);
-  txt.textContent = `${weeks}週間プログラム（約${months}ヶ月）`;
-  sub.textContent = `${cur}kg → ${tgt}kg（+${diff}kg）を週平均+${perWeek}kg増で達成する計画です。`;
+  const weight = +document.getElementById('s-weight').value || 0;
+  const age = +document.getElementById('s-age').value || 0;
+  const rec = recommendWeeks(cur, tgt, { currentMax: cur, weight, age });
+  const months = (rec.weeks / 4.345).toFixed(1);
+  if (rec.milestone) {
+    // 1ブロックで届かない目標 → 分割ロードマップを提示
+    txt.textContent = `${rec.weeks}週間ブロック × 複数回（第1ブロック目標 ${rec.milestone}kg）`;
+    sub.textContent = `${cur}kg → ${tgt}kg（+${tgt - cur}kg）は、あなたの実力レベルではエビデンス上1ブロックで到達困難です。まず${rec.weeks}週で${rec.milestone}kgを目指し、MAXテスト後に実績で次ブロックを再生成する多段計画を推奨します。`;
+  } else {
+    const diff = tgt - cur;
+    const perWeek = (diff / rec.weeks).toFixed(2);
+    txt.textContent = `${rec.weeks}週間プログラム（約${months}ヶ月）`;
+    sub.textContent = `${cur}kg → ${tgt}kg（+${diff}kg）を週平均+${perWeek}kg増で達成する計画です。`;
+  }
 }
 
 // ===== PROGRAM GENERATOR =====
@@ -773,10 +802,12 @@ function generateProgram() {
     alert('目標1RMは現在の1RMより高く設定してください'); return;
   }
 
-  // 週数は現状と目標から自動算出（週平均+2.5kg）
-  const totalWeeks = recommendWeeks(currentMax, targetMax);
+  // 週数は現状と目標から自動算出（実力レベル・年齢に応じたエビデンスペース）
+  const rec = recommendWeeks(currentMax, targetMax, { currentMax, weight, age });
+  const totalWeeks = rec.weeks;
+  const blockTarget = rec.milestone; // nullなら1ブロックで目標到達、非nullなら分割ロードマップの第1ブロック目標
 
-  const profile = { age, weight, height, gender, currentMax, targetMax, startDate, totalWeeks };
+  const profile = { age, weight, height, gender, currentMax, targetMax, blockTarget, startDate, totalWeeks };
   state.profile = profile;
 
   // 編集モードでは記録・完了状態を保持
@@ -791,7 +822,8 @@ function generateProgram() {
   document.getElementById('setup-cancel-btn').style.display = 'none';
 
   // 週ごとの推定1RM（1.25〜2.5kg刻みの段階的進行、ディロード週は据え置き）
-  const rmForWeek = makeRmForWeek(currentMax, targetMax, totalWeeks);
+  // 分割ロードマップの場合は第1ブロック目標(blockTarget)に向けて生成する
+  const rmForWeek = makeRmForWeek(currentMax, blockTarget || targetMax, totalWeeks);
 
   const program = buildProgramSessions(profile, rmForWeek);
 
@@ -899,14 +931,16 @@ function balanceWeeklyINOL(sessions) {
 // 完成したプログラム全体を見て、長すぎ・短すぎを判定する。
 function validateAndOptimize() {
   const p = state.profile;
-  const diff = p.targetMax - p.currentMax;
+  const blockTgt = p.blockTarget || p.targetMax; // このブロックで実際に目指す重量
+  const diff = blockTgt - p.currentMax;
   const neededPerWeek = diff / p.totalWeeks;
   const months = (p.totalWeeks / 4.345).toFixed(1);
+  const rate = planRatePerWeek(p); // 実力レベル・年齢に応じたエビデンス上の週あたり伸び
 
   const report = { status: 'ok', warnings: [], infos: [], regenerated: false };
 
   // 目標が現在より低い
-  if (diff <= 0) {
+  if (p.targetMax - p.currentMax <= 0) {
     report.status = 'warn';
     report.warnings.push('目標1RMが現在の1RM以下です。目標を引き上げてください。');
     state.program.report = report;
@@ -914,17 +948,21 @@ function validateAndOptimize() {
     return report;
   }
 
-  report.infos.push(`現状${p.currentMax}kg → 目標${p.targetMax}kg（+${diff}kg）を${p.totalWeeks}週間（約${months}ヶ月）で達成する計画です。`);
+  if (p.blockTarget) {
+    report.infos.push(`最終目標${p.targetMax}kgは実力レベル(体重比${(p.currentMax / p.weight).toFixed(2)}倍)${p.age >= 45 ? 'と年齢' : ''}を踏まえると1ブロックでは到達困難なため、多段計画にしています。第1ブロック: ${p.currentMax}kg → ${blockTgt}kg（${p.totalWeeks}週間）。MAXテスト後、実績をもとに次ブロックを再生成してください。`);
+  } else {
+    report.infos.push(`現状${p.currentMax}kg → 目標${p.targetMax}kg（+${diff}kg）を${p.totalWeeks}週間（約${months}ヶ月）で達成する計画です。`);
+  }
 
-  // プログラム全体の長さ評価：1〜2週で1.25〜2.5kgの段階的進行に沿っているか
-  if (neededPerWeek > GAIN_STEP_MAX * 1.1) {
-    report.status = 'caution';
-    report.warnings.push(`週平均+${neededPerWeek.toFixed(1)}kgは目安(1〜2週で1.25〜2.5kg)より急で、期間が短い可能性があります。伸び悩んだら記録入力で自動延長されます。`);
-  } else if (neededPerWeek < GAIN_STEP_MIN * 0.5) {
+  // プログラム全体の長さ評価：エビデンス上の伸びペース(実力・年齢考慮)と比較
+  if (neededPerWeek > rate * 1.3) {
+    report.status = 'warn';
+    report.warnings.push(`週平均+${neededPerWeek.toFixed(1)}kgの進行は、あなたの実力レベルと年齢での科学的な伸びの目安（週+${rate.toFixed(1)}kg）を大きく超えています。目標の分割か期間延長を強く推奨します。伸び悩んだ場合は記録入力で自動調整されます。`);
+  } else if (neededPerWeek < rate * 0.4) {
     report.status = 'caution';
     report.warnings.push(`週平均+${neededPerWeek.toFixed(1)}kgはゆとりがあり、期間がやや長めです。より短期で達成できる可能性があります。`);
   } else {
-    report.infos.push(`週平均+${neededPerWeek.toFixed(1)}kg増（1〜2週で1.25〜2.5kgの段階的進行）。ディロードとピーキングを織り込んだ達成最優先の構成です。`);
+    report.infos.push(`週平均+${neededPerWeek.toFixed(1)}kg増は、あなたの実力レベル${p.age >= 45 ? '・年齢' : ''}に対して科学的に現実的なペース（目安 週+${rate.toFixed(1)}kg）です。`);
   }
 
   // 週あたりINOLチェック（蓄積・強化期の目標 2.0〜2.8）
@@ -959,7 +997,6 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
   let rackup = null;
   let phaseName = phase.name;
 
-  const deloadMult = isDeload ? 0.75 : 1;
 
   if (isMaxDay) {
     // MAXテスト日（試合シミュレーション）— 競技の試技係数に基づく3本勝負
@@ -980,7 +1017,8 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
     if (phaseName === 'accumulation') { pct = 80; sets = 5; reps = 3; }
     else if (phaseName === 'intensification') { pct = 85; sets = 5; reps = 2; }
     else if (phaseName === 'peaking') { pct = 82; sets = 3; reps = 2; }
-    else { /* deload=テーパー週 */ pct = 70; sets = 2; reps = 3; }
+    // ディロードは45歳以上でより深く落とす（マスターズは回復微週の強度減を10〜15%と大きめに取る）
+    else { /* deload=テーパー週 */ pct = (state.profile?.age >= 45) ? 65 : 70; sets = 2; reps = 3; }
 
     for (let i = 0; i < sets; i++) {
       mainSets.push({ weight: pctWeight(rm1, pct), reps, note: phaseName === 'deload' ? '軽め・疲労抜き' : '' });
@@ -1064,7 +1102,7 @@ function renderProgram() {
     rep.warnings.forEach(w => { repHtml += `<div style="font-size:13px;color:var(--yellow);margin-bottom:6px;line-height:1.5">⚠️ ${w}</div>`; });
     rep.infos.forEach(i => { repHtml += `<div style="font-size:13px;color:var(--text2);margin-bottom:4px;line-height:1.5">ℹ️ ${i}</div>`; });
     if (rep.status === 'ok' && rep.warnings.length === 0) {
-      repHtml += `<div style="font-size:13px;color:var(--green)">このプログラムは安全に実現可能です。</div>`;
+      repHtml += `<div style="font-size:13px;color:var(--green)">このプログラムは科学的に現実的なペースで構成されています。</div>`;
     }
     repHtml += '</div>';
     document.getElementById('program-content').innerHTML = repHtml;
@@ -1495,7 +1533,7 @@ function planRecalibration(session, loggedSets) {
 
   // プロフィールはクローンして計算（liveなstateは変更しない）
   const p = { ...state.profile };
-  const rate = PLAN_RATE;
+  const rate = planRatePerWeek(p); // 実力レベル・年齢に応じたエビデンスペース
   const anchorWeek = session.weekIdx;
 
   const pastRM = {};
@@ -1504,7 +1542,9 @@ function planRecalibration(session, loggedSets) {
 
   const origRemaining = p.totalWeeks - 1 - anchorWeek;
   let remaining = origRemaining;
-  const neededGain = p.targetMax - achievedRM;
+  // 分割ロードマップ中はこのブロックの目標(blockTarget)に向けて再計算する
+  const blockTgt = p.blockTarget || p.targetMax;
+  const neededGain = blockTgt - achievedRM;
 
   if (neededGain > 0) {
     if (remaining <= 0) {
@@ -1527,7 +1567,7 @@ function planRecalibration(session, loggedSets) {
   const perWeek = remaining > 0 ? Math.max(0, neededGain) / remaining : 0;
   const rmForWeek = (w) => {
     if (w <= anchorWeek) return pastRM[w] !== undefined ? pastRM[w] : achievedRM;
-    if (w >= newTotal - 1) return p.targetMax;
+    if (w >= newTotal - 1) return blockTgt;
     if (programPhase(newTotal, w).name === 'deload') return round125(achievedRM + perWeek * (w - 1 - anchorWeek));
     return round125(achievedRM + perWeek * (w - anchorWeek));
   };
@@ -2540,6 +2580,22 @@ function renderTheory() {
     <div class="theory-section">
       <h3>📈 MAXテスト計画（試合シミュレーション）</h3>
       <p>${weeks ? `プログラム${Math.floor(weeks/2)}週目と${weeks}週目` : '6〜8週ごと'}にMAXテスト日を設定。直前のピーキング期で量を削り疲労を抜いてから、試技係数に沿って3本でMAX更新を狙う。コンディション不良なら無理せず延期。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>🥩 栄養・回復（体重比1.35倍超を目指すなら必須）</h3>
+      <p>体重比1.4倍を超えるベンチプレスは<strong>筋量が律速</strong>になりやすい。挙上テクニックと神経系だけでは頭打ちになるため、以下が実質的な前提条件になる：</p>
+      <ul>
+        <li><strong>微増量：</strong>月+0.25〜0.5kgのゆるやかな体重増（急激な増量は体脂肪優位になる）。体重が増えれば挙上の土台（筋断面積・安定性）が直接強化される。</li>
+        <li><strong>タンパク質 1.6〜2.2g/kg/日：</strong>筋タンパク合成を最大化する摂取量のエビデンス上の目安（体重68kgなら109〜150g/日）。</li>
+        <li><strong>クレアチン 3〜5g/日：</strong>筋力系サプリメントで最もエビデンスが強い。高強度反復の質を高め、長期の筋力向上を数%上乗せする。</li>
+        <li><strong>45歳以上の回復：</strong>睡眠7時間以上・トレーニング間に2〜3日の回復日を確保。回復力は加齢で低下するため、ディロード週はより深く負荷を落とす（本プログラムは45歳以上で自動調整）。</li>
+      </ul>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>🗺️ 現実的な伸びペースと多段ブロック計画</h3>
+      <p>1RMの伸びは実力レベルで大きく変わる：<strong>初心者は週1〜2.5kg、中級者（体重比1.0〜1.35倍）は月2.5〜5kg、上級者はさらに緩やか</strong>。45歳以上は回復力低下でこの目安から約2割引きが現実的。本アプリは体重比と年齢から週あたりの計画ペースを自動算出し、1ブロック（〜16週）で届かない目標は<strong>13週ブロック＋中間マイルストーン</strong>に自動分割する。各ブロック末のMAXテスト実績で次ブロックを再生成するのが、遠回りに見えて最短のルートである。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
