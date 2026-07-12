@@ -1,0 +1,2656 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<title>BenchPress Pro</title>
+<link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg2: #1e293b;
+    --bg3: #334155;
+    --accent: #3b82f6;
+    --accent2: #60a5fa;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --text: #f1f5f9;
+    --text2: #94a3b8;
+    --radius: 12px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    overflow-x: hidden;
+  }
+  #app { display: flex; flex-direction: column; min-height: 100vh; min-height: -webkit-fill-available; }
+
+  /* ===== NAV ===== */
+  .nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--bg2);
+    border-top: 1px solid var(--bg3);
+    display: flex;
+    padding-bottom: var(--safe-bottom);
+    z-index: 100;
+  }
+  .nav-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    padding: 8px 4px 6px; border: none; background: none;
+    color: var(--text2); font-size: 10px; cursor: pointer;
+    transition: color .2s;
+  }
+  .nav-btn.active { color: var(--accent2); }
+  .nav-btn svg { width: 24px; height: 24px; margin-bottom: 2px; }
+
+  /* ===== HEADER ===== */
+  .header {
+    background: var(--bg2);
+    padding: calc(var(--safe-top) + 12px) 16px 12px;
+    border-bottom: 1px solid var(--bg3);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .header h1 { font-size: 20px; font-weight: 700; }
+  .header p { font-size: 13px; color: var(--text2); margin-top: 2px; }
+
+  /* ===== SCREENS ===== */
+  .screen {
+    display: none; flex: 1;
+    padding: 16px 16px calc(80px + var(--safe-bottom));
+    overflow-y: auto;
+  }
+  .screen.active { display: block; }
+
+  /* ===== CARDS ===== */
+  .card {
+    background: var(--bg2); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 12px;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; color: var(--accent2);
+    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px;
+  }
+
+  /* ===== FORM ===== */
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 13px; color: var(--text2); margin-bottom: 6px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  input, select {
+    width: 100%; padding: 12px 14px;
+    background: var(--bg3); border: 1px solid transparent;
+    border-radius: 10px; color: var(--text); font-size: 16px;
+    outline: none; transition: border-color .2s;
+    -webkit-appearance: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--bg2); }
+
+  /* ===== BUTTONS ===== */
+  .btn {
+    display: block; width: 100%; padding: 14px;
+    border: none; border-radius: var(--radius);
+    font-size: 16px; font-weight: 600; cursor: pointer;
+    transition: opacity .2s, transform .1s;
+  }
+  .btn:active { transform: scale(.98); opacity: .85; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-success { background: var(--green); color: white; }
+  .btn-outline {
+    background: transparent; color: var(--accent2);
+    border: 1.5px solid var(--accent);
+  }
+  .btn-sm {
+    padding: 8px 14px; font-size: 14px; width: auto; display: inline-block;
+  }
+  .btn-danger { background: var(--red); color: white; }
+
+  /* ===== BADGES ===== */
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 600;
+  }
+  .badge-blue { background: rgba(59,130,246,.2); color: var(--accent2); }
+  .badge-green { background: rgba(34,197,94,.2); color: var(--green); }
+  .badge-yellow { background: rgba(245,158,11,.2); color: var(--yellow); }
+  .badge-red { background: rgba(239,68,68,.2); color: var(--red); }
+
+  /* ===== PROGRAM ===== */
+  .week-card { background: var(--bg2); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
+  .week-header {
+    padding: 12px 16px; background: var(--bg3);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .week-header h3 { font-size: 15px; font-weight: 700; }
+  .session-row {
+    padding: 14px 16px; border-bottom: 1px solid var(--bg3);
+    cursor: pointer; transition: background .15s;
+  }
+  .session-row:last-child { border-bottom: none; }
+  .session-row:active { background: var(--bg3); }
+  .session-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .session-date { font-size: 14px; font-weight: 600; }
+  .session-type { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .sets-preview { font-size: 12px; color: var(--text2); }
+
+  /* ===== WORKOUT ===== */
+  .phase-label {
+    font-size: 12px; font-weight: 700; color: var(--text2);
+    text-transform: uppercase; letter-spacing: 1px;
+    margin: 16px 0 8px; padding-left: 4px;
+  }
+  .set-row {
+    display: flex; align-items: center;
+    background: var(--bg2); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 8px;
+    gap: 12px;
+  }
+  .set-num { font-size: 14px; font-weight: 700; color: var(--text2); width: 32px; }
+  .set-info { flex: 1; }
+  .set-weight { font-size: 18px; font-weight: 700; }
+  .set-reps { font-size: 13px; color: var(--text2); }
+  .set-done {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 2px solid var(--bg3); background: none;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all .2s;
+  }
+  .set-done.checked { background: var(--green); border-color: var(--green); }
+  .set-done svg { width: 18px; height: 18px; }
+  .inol-bar-wrap { margin-top: 8px; }
+  .inol-bar-bg { background: var(--bg3); border-radius: 4px; height: 6px; margin-top: 4px; }
+  .inol-bar-fill { height: 6px; border-radius: 4px; transition: width .5s; }
+
+  /* ===== RECORDS ===== */
+  .record-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--bg3);
+  }
+  .record-row:last-child { border-bottom: none; }
+
+  /* ===== ANALYSIS ===== */
+  .chart-wrap { position: relative; height: 220px; margin: 8px 0; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .stat-box {
+    background: var(--bg3); border-radius: 10px; padding: 14px;
+    text-align: center;
+  }
+  .stat-val { font-size: 26px; font-weight: 800; color: var(--accent2); }
+  .stat-unit { font-size: 12px; }
+  .stat-lbl { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+  /* ===== THEORY ===== */
+  .theory-section { margin-bottom: 20px; }
+  .theory-section h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--accent2); }
+  .theory-section p { font-size: 14px; line-height: 1.7; color: var(--text2); }
+  .theory-section ul { padding-left: 18px; }
+  .theory-section li { font-size: 14px; line-height: 1.8; color: var(--text2); }
+
+  /* ===== MISC ===== */
+  .divider { height: 1px; background: var(--bg3); margin: 12px 0; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text2); }
+  .empty-state svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: .4; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+  .max-day-badge {
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    color: white; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700;
+  }
+  .progress-ring { display: flex; align-items: center; gap: 12px; }
+  .ring-wrap { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+  .ring-svg { transform: rotate(-90deg); }
+  .ring-pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+
+  /* ===== MODAL ===== */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+    z-index: 200; align-items: flex-end;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--bg2); border-radius: var(--radius) var(--radius) 0 0;
+    padding: 20px 20px calc(20px + var(--safe-bottom)); width: 100%;
+    max-height: 90vh; overflow-y: auto;
+  }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+  .modal-close { float: right; background: none; border: none; color: var(--text2); font-size: 22px; cursor: pointer; }
+
+  /* ===== INPUT LOG ===== */
+  .log-input-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .log-input-row input { flex: 1; }
+  .rpe-dots { display: flex; gap: 6px; }
+  .rpe-dot {
+    width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--bg3);
+    background: none; color: var(--text2); font-size: 12px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rpe-dot.active { border-color: var(--accent); background: var(--accent); color: white; }
+
+  /* ===== SETUP SCREEN ===== */
+  .setup-hero { text-align: center; padding: 24px 0 20px; }
+  .setup-hero h2 { font-size: 26px; font-weight: 800; }
+  .setup-hero p { font-size: 14px; color: var(--text2); margin-top: 6px; }
+  .step-indicator { display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; }
+  .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bg3); transition: background .3s; }
+  .step-dot.active { background: var(--accent); }
+
+  /* ===== REST TIMER ===== */
+  .rest-banner {
+    display: none;
+    position: fixed; left: 0; right: 0;
+    bottom: calc(58px + var(--safe-bottom));
+    background: var(--bg2); border-top: 1px solid var(--accent);
+    padding: 12px 16px; z-index: 150;
+    box-shadow: 0 -4px 20px rgba(0,0,0,.4);
+  }
+  .rest-banner.open { display: block; }
+  .rest-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .rest-label { font-size: 13px; color: var(--text2); }
+  .rest-time { font-size: 24px; font-weight: 800; color: var(--accent2); font-variant-numeric: tabular-nums; }
+  .rest-actions { display: flex; gap: 8px; }
+  .rest-actions button {
+    padding: 6px 12px; border-radius: 8px; border: 1.5px solid var(--bg3);
+    background: none; color: var(--text2); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .rest-bar-bg { background: var(--bg3); border-radius: 4px; height: 6px; overflow: hidden; }
+  .rest-bar-fill { height: 6px; border-radius: 4px; background: var(--accent); transition: width 1s linear; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== HEADER ===== -->
+  <div class="header">
+    <h1 id="headerTitle">BenchPress Pro</h1>
+    <p id="headerSub">ベンチプレス専用トレーニングアプリ</p>
+  </div>
+
+  <!-- ===== SCREENS ===== -->
+
+  <!-- SETUP -->
+  <div class="screen active" id="screen-setup">
+    <div id="setup-edit-banner" style="display:none;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--yellow)">
+      ⚠️ 設定変更モード — 過去の記録は保持されます
+    </div>
+    <div class="setup-hero">
+      <h2 id="setup-title">初期設定</h2>
+      <p>あなたに最適なプログラムを自動生成します</p>
+    </div>
+    <div class="card">
+      <div class="card-title">身体情報</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>年齢</label>
+          <input type="number" id="s-age" placeholder="例: 28" min="15" max="80">
+        </div>
+        <div class="form-group">
+          <label>性別</label>
+          <select id="s-gender">
+            <option value="male">男性</option>
+            <option value="female">女性</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>身長 (cm)</label>
+          <input type="number" id="s-height" placeholder="例: 175">
+        </div>
+        <div class="form-group">
+          <label>体重 (kg)</label>
+          <input type="number" id="s-weight" placeholder="例: 75" step="0.5">
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">現在のMAX & 目標</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>現在の実績1RM (kg)</label>
+          <input type="number" id="s-current-max" placeholder="例: 80" step="2.5">
+        </div>
+        <div class="form-group">
+          <label>目標1RM (kg)</label>
+          <input type="number" id="s-target-max" placeholder="例: 100" step="2.5">
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">プログラム設定</div>
+      <div class="form-group">
+        <label>スタート日</label>
+        <input type="date" id="s-start-date">
+      </div>
+      <div id="weeks-proposal" style="display:none;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.35);border-radius:10px;padding:14px;margin-top:4px">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">現状と目標から自動算出</div>
+        <div style="font-size:15px;font-weight:700;color:var(--accent2)" id="weeks-proposal-text">—</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:6px;line-height:1.5" id="weeks-proposal-sub"></div>
+      </div>
+    </div>
+    <button class="btn btn-primary" id="setup-btn" onclick="generateProgram()">プログラムを自動生成</button>
+    <button class="btn btn-outline" id="setup-cancel-btn" style="display:none;margin-top:10px" onclick="cancelSettings()">キャンセル</button>
+  </div>
+
+  <!-- PROGRAM -->
+  <div class="screen" id="screen-program">
+    <div id="program-content"></div>
+  </div>
+
+  <!-- TRAINING -->
+  <div class="screen" id="screen-training">
+    <div id="training-content">
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M6.5 6.5h11M6.5 17.5h11M4 12h16"/>
+        </svg>
+        <p>プログラム画面からセッションを選択してください</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- RECORDS -->
+  <div class="screen" id="screen-records">
+    <div id="records-content"></div>
+  </div>
+
+  <!-- ANALYSIS -->
+  <div class="screen" id="screen-analysis">
+    <div id="analysis-content"></div>
+  </div>
+
+  <!-- THEORY -->
+  <div class="screen" id="screen-theory">
+    <div id="theory-content"></div>
+  </div>
+
+  <!-- REST TIMER -->
+  <div class="rest-banner" id="restBanner">
+    <div class="rest-top">
+      <div>
+        <div class="rest-label">⏱️ 休憩中</div>
+        <div class="rest-time" id="restTime">0:00</div>
+      </div>
+      <div class="rest-actions">
+        <button onclick="addRest(30)">+30秒</button>
+        <button onclick="stopRest()">スキップ</button>
+      </div>
+    </div>
+    <div class="rest-bar-bg"><div class="rest-bar-fill" id="restBar" style="width:100%"></div></div>
+  </div>
+
+  <!-- NAV -->
+  <nav class="nav">
+    <button class="nav-btn" onclick="switchTab('program')" id="nav-program">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+      プログラム
+    </button>
+    <button class="nav-btn" onclick="switchTab('training')" id="nav-training">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M6 4v16M18 4v16M2 8h4M18 8h4M2 16h4M18 16h4"/>
+      </svg>
+      トレーニング
+    </button>
+    <button class="nav-btn" onclick="switchTab('records')" id="nav-records">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+      </svg>
+      記録
+    </button>
+    <button class="nav-btn" onclick="switchTab('analysis')" id="nav-analysis">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+      </svg>
+      分析
+    </button>
+    <button class="nav-btn" onclick="switchTab('theory')" id="nav-theory">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      理論
+    </button>
+  </nav>
+</div>
+
+<!-- WORKOUT MODAL -->
+<div class="modal-overlay" id="workoutModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <div class="modal-title" id="modalTitle">今日のトレーニング</div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<!-- LOG MODAL -->
+<div class="modal-overlay" id="logModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeLogModal()">×</button>
+    <div class="modal-title">記録を入力</div>
+    <div id="logModalBody"></div>
+  </div>
+</div>
+
+<!-- 復元用の非表示ファイル入力 -->
+<input type="file" id="restoreInput" accept="application/json" style="display:none" onchange="importData(event)">
+
+<script>
+// ===== STATE =====
+let state = JSON.parse(localStorage.getItem('bp-state') || 'null') || {
+  profile: null,
+  program: null,
+  currentSession: null,
+  records: [],    // [{date, sessionType, sets:[{weight,reps,done}], notes, rpe, fatigue, restActual}]
+  completedSessions: {},  // sessionKey: true
+  bodyweights: []  // [{date, weight, fat}]
+};
+// 既存データに欄が無い場合の初期化（後方互換）
+if (!Array.isArray(state.bodyweights)) state.bodyweights = [];
+
+function save() { localStorage.setItem('bp-state', JSON.stringify(state)); }
+
+// ===== UTILS =====
+const DAYS = ['日','月','火','水','木','金','土'];
+function fmtDate(d) {
+  const dt = new Date(d);
+  return `${dt.getMonth()+1}/${dt.getDate()}(${DAYS[dt.getDay()]})`;
+}
+function round25(x) { return Math.round(x / 2.5) * 2.5; }
+function calcINOL(sets, reps, pct) { return (sets * reps) / (100 - pct); }
+
+// 1セッションの合計INOL
+function sessionINOL(session) {
+  if (!session || !session.mainSets) return 0;
+  return session.mainSets.reduce((a, set) => {
+    const pct = Math.round(set.weight / session.rm1 * 100);
+    return a + calcINOL(1, set.reps, pct);
+  }, 0);
+}
+
+// 週ごとの合計INOLを返す { weekIdx: inol }
+function weeklyINOLMap() {
+  const map = {};
+  if (!state.program) return map;
+  state.program.sessions.forEach(s => {
+    if (s.isMaxDay) return; // MAXテスト日は除外
+    map[s.weekIdx] = (map[s.weekIdx] || 0) + sessionINOL(s);
+  });
+  return map;
+}
+
+// Estimate 1RM from reps (Epley formula)
+function epley(weight, reps) {
+  if (reps === 1) return weight;
+  return weight * (1 + reps / 30);
+}
+
+// RPEを加味した推定1RM。
+// RIR（Reps In Reserve＝あと何回できたか）= 10 - RPE を実施レップに足して
+// 「限界まで何回できたか」を推定し、Epley式に代入する。
+// これにより「余裕を残したセット」でも本当の実力に近い1RMを推定できる。
+function rpeE1RM(weight, reps, rpe) {
+  if (!weight || !reps) return 0;
+  // RPEが無ければ余裕ゼロ（=通常のEpley）として扱う
+  const rir = rpe ? Math.max(0, Math.min(4, 10 - rpe)) : 0;
+  const effReps = reps + rir;
+  if (effReps === 1) return weight; // 限界の1発挙上＝その重量が1RM（epleyの1レップ特例と同じ）
+  return weight * (1 + effReps / 30);
+}
+
+// Get weight for given % of 1RM
+function pctWeight(rm1, pct) { return round25(rm1 * pct / 100); }
+
+// 過去に実際に挙げた（フルレンジのメインセットで記録済みの）最大重量。
+// ラックアップ等パーシャルレンジの重量はここに含めない（可動域が違うため実力の証明にならない）。
+// アップの中間ステップがこれを超えないようにする安全上限として使う。
+function provenMaxWeight() {
+  let max = 0;
+  state.records.forEach(r => (r.sets || []).forEach(s => { if (s.weight > max) max = s.weight; }));
+  return max;
+}
+
+// メインセット前のアップセットプランを生成。
+// 20kg(バー)から開始し、メイン重量の%に応じた重量を10kg刻みに丸めて提示する。
+// パワーリフター/ベンチプレッサーの一般的な流儀に合わせ、バー以外は全てシングル(1回)にして
+// 無駄な疲労を溜めずに神経系・フォームだけ慣らす。重複・バー重量以下の候補は間引くため、
+// 軽い日は自然にセット数が減る。
+// 最終ステップは90%（PAP＝活動後増強の研究で85〜90%1RMが最も増強効果が高いとされる範囲）とし、
+// トップセットの「リハーサル」として機能させる。
+// ラックアップ（パーシャルレンジで意図的にメイン超の重量を扱う種目）が含まれる日は、
+// topWeight自体がフルレンジの実力を超えることがある。中間のアップ単発重量（＝フルレンジの
+// シングル）が provenMaxWeight()（実際に挙げたことのある重量）を超えないようキャップし、
+// 未経験の重量をアップとして提案しないようにする。ラックアップ／メインセット自体（＝その日の
+// 本番）はキャップ対象外（新記録に挑む対象なので当然超えてよい）。
+function buildWarmupSets(topWeight) {
+  if (!topWeight || topWeight <= 20) return [];
+  const heavy = topWeight > 70;
+  const fracs = heavy ? [0.5, 0.7, 0.9] : [0.6, 0.85];
+  const proven = provenMaxWeight();
+  const cap = proven ? Math.floor(proven / 10) * 10 : Infinity; // 実績が無ければ制限なし
+  const sets = [{ weight: 20, reps: 5 }];
+  fracs.forEach(f => {
+    let w = Math.round(topWeight * f / 10) * 10;
+    w = Math.min(w, cap);
+    const last = sets[sets.length - 1].weight;
+    if (w > last && w < topWeight) sets.push({ weight: w, reps: 1 });
+  });
+  return sets;
+}
+
+// 記録の中で最も重いセット（＝実力を測るトップセット）を返す
+function topSetOf(r) {
+  if (!r.sets || !r.sets.length) return null;
+  let top = r.sets[0];
+  r.sets.forEach(s => { if (s.weight > top.weight) top = s; });
+  return top;
+}
+
+// 記録からRPE補正推定1RMを算出。
+// 各セットに個別RPEが無い場合はレコード全体のRPE（旧データ互換）にフォールバックするが、
+// 必ず「トップセット（最重量セット）」自身の実績のみで評価する。
+// バックオフセットに同じRPEを当てはめて最大値を取ると、レップ数の多さで実力が過大評価されるため。
+function recordE1RM(r) {
+  const top = topSetOf(r);
+  if (!top || !top.weight || !top.reps) return 0;
+  const rpe = top.rpe != null ? top.rpe : r.rpe;
+  return rpeE1RM(top.weight, top.reps, rpe);
+}
+
+// 同種目の1つ前の記録を返す（beforeDateより前の最新）
+function lastRecordOfType(type, beforeDate) {
+  const past = state.records
+    .filter(r => r.type === type && r.date < beforeDate)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return past.length ? past[past.length - 1] : null;
+}
+
+// ===== 休憩タイマー =====
+let restTimer = null;
+let restRemaining = 0;
+let restTotal = 0;
+
+function startRest(sec) {
+  stopRest();
+  restTotal = sec;
+  restRemaining = sec;
+  document.getElementById('restBanner').classList.add('open');
+  updateRestUI();
+  restTimer = setInterval(() => {
+    restRemaining--;
+    if (restRemaining <= 0) { stopRest(); return; }
+    updateRestUI();
+  }, 1000);
+}
+
+function addRest(sec) {
+  if (restTimer === null) return;
+  restRemaining += sec;
+  restTotal += sec;
+  updateRestUI();
+}
+
+function stopRest() {
+  if (restTimer !== null) { clearInterval(restTimer); restTimer = null; }
+  document.getElementById('restBanner').classList.remove('open');
+}
+
+function updateRestUI() {
+  const m = Math.floor(restRemaining / 60);
+  const s = restRemaining % 60;
+  document.getElementById('restTime').textContent = `${m}:${String(s).padStart(2,'0')}`;
+  const pct = restTotal ? Math.max(0, restRemaining / restTotal * 100) : 0;
+  document.getElementById('restBar').style.width = pct + '%';
+}
+
+// ===== データのバックアップ／復元 =====
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const today = new Date().toISOString().split('T')[0];
+  a.href = url;
+  a.download = `benchpress-backup-${today}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function importData(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      // 最低限の妥当性チェック
+      if (typeof data !== 'object' || data === null || !('records' in data)) {
+        alert('このファイルはBenchPress Proのバックアップではないようです。');
+        return;
+      }
+      if (!confirm('現在のデータを上書きしてこのバックアップを復元しますか？\nこの操作は元に戻せません。')) return;
+      state = data;
+      save();
+      alert('データを復元しました。アプリを再読み込みします。');
+      location.reload();
+    } catch (e) {
+      alert('ファイルの読み込みに失敗しました。JSONが壊れている可能性があります。');
+    } finally {
+      event.target.value = ''; // 同じファイルを再選択できるようリセット
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ===== SETTINGS =====
+let isEditMode = false;
+
+function openSettings() {
+  isEditMode = true;
+  const p = state.profile;
+  document.getElementById('s-age').value = p.age;
+  document.getElementById('s-weight').value = p.weight;
+  document.getElementById('s-height').value = p.height;
+  document.getElementById('s-gender').value = p.gender;
+  document.getElementById('s-current-max').value = p.currentMax;
+  document.getElementById('s-target-max').value = p.targetMax;
+  document.getElementById('s-start-date').value = p.startDate;
+  updateWeeksProposal();
+  document.getElementById('setup-title').textContent = '設定を変更';
+  document.getElementById('setup-btn').textContent = 'プログラムを再生成（記録は保持）';
+  document.getElementById('setup-edit-banner').style.display = 'block';
+  document.getElementById('setup-cancel-btn').style.display = 'block';
+
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('screen-setup').classList.add('active');
+  document.getElementById('headerTitle').textContent = '設定変更';
+  document.getElementById('headerSub').textContent = '記録は保持されます';
+}
+
+function cancelSettings() {
+  isEditMode = false;
+  switchTab('program');
+}
+
+// ===== 週数自動算出（週平均+2.5kgペースから週数を計算）=====
+// 1RM増加ペース：1〜2週ごとに1.25〜2.5kgステップアップ
+const GAIN_STEP_MIN = 1.25;   // 最小ステップ
+const GAIN_STEP_MAX = 2.5;    // 最大ステップ
+const PLAN_RATE = 1.875;      // 計画用の週平均（1.25〜2.5の中央値）
+
+// 重量を1.25kg刻みに丸める
+function round125(x) { return Math.round(x / 1.25) * 1.25; }
+
+// 現状と目標から週数を算出。
+// ディロード週は進行しないため、1ステップが1.25〜2.5kgに収まる週数を選ぶ。
+function recommendWeeks(currentMax, targetMax) {
+  const diff = targetMax - currentMax;
+  if (diff <= 0) return null; // 目標が現状以下
+  let best = null, bestScore = Infinity;
+  for (let total = 3; total <= 24; total++) {
+    let prog = 0;
+    for (let w = 0; w < total; w++) if (programPhase(total, w).name !== 'deload') prog++;
+    const steps = Math.max(1, prog - 1);   // 最初の進行週=現状、以降がステップ
+    const avgStep = diff / steps;
+    if (avgStep > GAIN_STEP_MAX) continue;  // 1ステップが2.5kg超→週数不足
+    const score = Math.abs(avgStep - PLAN_RATE) + total * 0.01; // 平均1.875kg/ステップに近く短いものを優先
+    if (score < bestScore) { bestScore = score; best = total; }
+  }
+  return best === null ? 24 : best;          // 24週でも届かない場合は最長
+}
+
+// 週ごとの推定1RMを返す関数を生成。
+// 進行週（非ディロード）で1.25〜2.5kg刻みにステップアップ、
+// ディロード週は重量を据え置いて疲労を抜く。最終週で目標を実現する。
+function makeRmForWeek(currentMax, targetMax, totalWeeks) {
+  const arr = new Array(totalWeeks);
+  const progWeeks = [];
+  for (let w = 0; w < totalWeeks; w++) {
+    if (programPhase(totalWeeks, w).name !== 'deload') progWeeks.push(w);
+  }
+  const nProg = Math.max(1, progWeeks.length);
+  let p = 0, lastRM = currentMax;
+  for (let w = 0; w < totalWeeks; w++) {
+    if (programPhase(totalWeeks, w).name === 'deload') {
+      arr[w] = lastRM;            // ディロード週は据え置き
+    } else {
+      const t = nProg > 1 ? p / (nProg - 1) : 1;
+      arr[w] = round125(currentMax + (targetMax - currentMax) * t);
+      lastRM = arr[w];
+      p++;
+    }
+  }
+  arr[totalWeeks - 1] = targetMax; // 最終週（ピーク/MAXテスト）で目標を実現
+  return (w) => arr[Math.min(Math.max(w, 0), arr.length - 1)];
+}
+
+// 入力変更時に推奨週数をライブ表示
+function updateWeeksProposal() {
+  const cur = +document.getElementById('s-current-max').value;
+  const tgt = +document.getElementById('s-target-max').value;
+  const box = document.getElementById('weeks-proposal');
+  const txt = document.getElementById('weeks-proposal-text');
+  const sub = document.getElementById('weeks-proposal-sub');
+  if (!cur || !tgt) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  if (tgt <= cur) {
+    txt.textContent = '⚠️ 目標を現状より高く設定してください';
+    sub.textContent = '';
+    return;
+  }
+  const weeks = recommendWeeks(cur, tgt);
+  const diff = tgt - cur;
+  const perWeek = (diff / weeks).toFixed(2);
+  const months = (weeks / 4.345).toFixed(1);
+  txt.textContent = `${weeks}週間プログラム（約${months}ヶ月）`;
+  sub.textContent = `${cur}kg → ${tgt}kg（+${diff}kg）を週平均+${perWeek}kg増で達成する計画です。`;
+}
+
+// ===== PROGRAM GENERATOR =====
+function generateProgram() {
+  const age = +document.getElementById('s-age').value;
+  const weight = +document.getElementById('s-weight').value;
+  const height = +document.getElementById('s-height').value;
+  const gender = document.getElementById('s-gender').value;
+  const currentMax = +document.getElementById('s-current-max').value;
+  const targetMax = +document.getElementById('s-target-max').value;
+  const startDate = document.getElementById('s-start-date').value;
+
+  if (!age || !weight || !height || !currentMax || !targetMax || !startDate) {
+    alert('すべての項目を入力してください'); return;
+  }
+  if (targetMax <= currentMax) {
+    alert('目標1RMは現在の1RMより高く設定してください'); return;
+  }
+
+  // 週数は現状と目標から自動算出（週平均+2.5kg）
+  const totalWeeks = recommendWeeks(currentMax, targetMax);
+
+  const profile = { age, weight, height, gender, currentMax, targetMax, startDate, totalWeeks };
+  state.profile = profile;
+
+  // 編集モードでは記録・完了状態を保持
+  if (!isEditMode) {
+    state.records = [];
+    state.completedSessions = {};
+  }
+  isEditMode = false;
+  document.getElementById('setup-title').textContent = '初期設定';
+  document.getElementById('setup-btn').textContent = 'プログラムを自動生成';
+  document.getElementById('setup-edit-banner').style.display = 'none';
+  document.getElementById('setup-cancel-btn').style.display = 'none';
+
+  // 週ごとの推定1RM（1.25〜2.5kg刻みの段階的進行、ディロード週は据え置き）
+  const rmForWeek = makeRmForWeek(currentMax, targetMax, totalWeeks);
+
+  const program = buildProgramSessions(profile, rmForWeek);
+
+  state.program = { profile, sessions: program, generated: new Date().toISOString() };
+  save();
+
+  // 実現可能性チェック & 最適化
+  validateAndOptimize();
+
+  switchTab('program');
+  renderProgram();
+}
+
+// ===== 共有：セッション一覧の生成 =====
+// rmForWeek(weekIdx) は各週の推定1RMを返す関数
+function programPhase(totalWeeks, weekIdx) {
+  const last = totalWeeks - 1;
+  // 最終週は必ずテーパー（疲労抜き＋MAXテストでピーク実現）
+  if (weekIdx === last) return { name: 'deload' };
+  // 終盤2週はピーキング（最終週直前にピークを作る）
+  if (totalWeeks >= 6 && weekIdx >= last - 1) return { name: 'peaking' };
+  // 疲労管理：4週ごとにディロードを挿入（中盤、終盤テーパーと重複しない範囲）
+  if (totalWeeks >= 8 && (weekIdx + 1) % 4 === 0 && weekIdx < last - 2) return { name: 'deload' };
+  // 残りを比率配分：蓄積〜55% → 強化 → ピーキング
+  const frac = weekIdx / totalWeeks;
+  if (frac < 0.55) return { name: 'accumulation' };
+  if (frac < 0.80) return { name: 'intensification' };
+  return { name: 'peaking' };
+}
+
+// MAXテスト日（試合シミュレーション）を行う週か判定
+function isMaxWeek(totalWeeks, weekIdx) {
+  if (weekIdx === totalWeeks - 1) return true;            // 最終週は必ず実施（目標達成の本番）
+  if (totalWeeks >= 14 && weekIdx === Math.floor(totalWeeks / 2)) return true; // 長期は中間で進捗確認
+  return false;
+}
+
+function buildProgramSessions(profile, rmForWeek) {
+  const { startDate, totalWeeks } = profile;
+  const program = [];
+  const startDateObj = new Date(startDate);
+  startDateObj.setHours(0,0,0,0);
+  const sd = new Date(startDate);
+  // 今週の月曜日を起点にする（スタート日が含まれる週）
+  const dayOfWeek = sd.getDay(); // 0=Sun,1=Mon...6=Sat
+  sd.setDate(sd.getDate() + (dayOfWeek === 0 ? 1 : 1 - dayOfWeek));
+
+  for (let w = 0; w < totalWeeks; w++) {
+    const phase = programPhase(totalWeeks, w);
+    const weekRM = rmForWeek(w);
+    const isMaxDay = isMaxWeek(totalWeeks, w);
+    const isDeload = phase.name === 'deload';
+
+    const monDate = new Date(sd); monDate.setDate(sd.getDate() + w * 7);
+    const wedDate = new Date(monDate); wedDate.setDate(monDate.getDate() + 2);
+    const satDate = new Date(monDate); satDate.setDate(monDate.getDate() + 5);
+
+    const vol = buildSession(monDate, 'volume', weekRM, phase, w, isDeload);
+    const tech = buildSession(wedDate, 'technique', weekRM, phase, w, isDeload);
+    const main = buildSession(satDate, 'main', weekRM, phase, w, isDeload, isMaxDay);
+
+    // 週あたりINOLを目標2.0〜2.8に調整（蓄積・強化期のみ。ピーキング/テーパーは意図的に低負荷）
+    if (phase.name === 'accumulation' || phase.name === 'intensification') {
+      balanceWeeklyINOL([vol, tech, main]);
+    }
+
+    if (monDate >= startDateObj) program.push(vol);
+    if (wedDate >= startDateObj) program.push(tech);
+    if (satDate >= startDateObj) program.push(main);
+  }
+  return program;
+}
+
+// 週あたりの合計INOLが2.0〜2.8に収まるよう、ボリューム/メイン日のセット数を増減
+function balanceWeeklyINOL(sessions) {
+  const TARGET_MIN = 2.0, TARGET_MAX = 2.8;
+  const sum = () => sessions.reduce((a, s) => a + sessionINOL(s), 0);
+  // メインセットの末尾(通常のワークセット)を複製/削除して微調整
+  const volume = sessions.find(s => s.type === 'volume');
+  const main = sessions.find(s => s.type === 'main');
+
+  let guard = 0;
+  // 不足→ボリューム日にワークセットを追加（最大8セットまで）
+  while (sum() < TARGET_MIN && guard++ < 20) {
+    if (volume && volume.mainSets.length < 8) {
+      const base = volume.mainSets[0];
+      volume.mainSets.push({ weight: base.weight, reps: base.reps, note: base.note });
+    } else if (main && main.mainSets.length < 7) {
+      const base = main.mainSets[0];
+      main.mainSets.splice(main.mainSets.length - 1, 0, { weight: base.weight, reps: base.reps, note: base.note });
+    } else break;
+  }
+  guard = 0;
+  // 過多→ボリューム日のワークセットを削減（最低3セットは維持）
+  while (sum() > TARGET_MAX && guard++ < 20) {
+    if (volume && volume.mainSets.length > 3) {
+      volume.mainSets.pop();
+    } else if (main && main.mainSets.length > 3) {
+      main.mainSets.splice(main.mainSets.length - 2, 1);
+    } else break;
+  }
+}
+
+// ===== 実現可能性チェック & プログラム全体評価 =====
+// 完成したプログラム全体を見て、長すぎ・短すぎを判定する。
+function validateAndOptimize() {
+  const p = state.profile;
+  const diff = p.targetMax - p.currentMax;
+  const neededPerWeek = diff / p.totalWeeks;
+  const months = (p.totalWeeks / 4.345).toFixed(1);
+
+  const report = { status: 'ok', warnings: [], infos: [], regenerated: false };
+
+  // 目標が現在より低い
+  if (diff <= 0) {
+    report.status = 'warn';
+    report.warnings.push('目標1RMが現在の1RM以下です。目標を引き上げてください。');
+    state.program.report = report;
+    save();
+    return report;
+  }
+
+  report.infos.push(`現状${p.currentMax}kg → 目標${p.targetMax}kg（+${diff}kg）を${p.totalWeeks}週間（約${months}ヶ月）で達成する計画です。`);
+
+  // プログラム全体の長さ評価：1〜2週で1.25〜2.5kgの段階的進行に沿っているか
+  if (neededPerWeek > GAIN_STEP_MAX * 1.1) {
+    report.status = 'caution';
+    report.warnings.push(`週平均+${neededPerWeek.toFixed(1)}kgは目安(1〜2週で1.25〜2.5kg)より急で、期間が短い可能性があります。伸び悩んだら記録入力で自動延長されます。`);
+  } else if (neededPerWeek < GAIN_STEP_MIN * 0.5) {
+    report.status = 'caution';
+    report.warnings.push(`週平均+${neededPerWeek.toFixed(1)}kgはゆとりがあり、期間がやや長めです。より短期で達成できる可能性があります。`);
+  } else {
+    report.infos.push(`週平均+${neededPerWeek.toFixed(1)}kg増（1〜2週で1.25〜2.5kgの段階的進行）。ディロードとピーキングを織り込んだ達成最優先の構成です。`);
+  }
+
+  // 週あたりINOLチェック（蓄積・強化期の目標 2.0〜2.8）
+  if (state.program) {
+    const wmap = weeklyINOLMap();
+    // 週ごとのセッション数（完全な週=3セッションのみ評価対象）
+    const cnt = {};
+    state.program.sessions.forEach(s => { cnt[s.weekIdx] = (cnt[s.weekIdx] || 0) + 1; });
+    const buildWeeks = [];
+    state.program.sessions.forEach(s => {
+      if ((s.phaseName === 'accumulation' || s.phaseName === 'intensification')
+          && cnt[s.weekIdx] === 3 && !buildWeeks.includes(s.weekIdx)) {
+        buildWeeks.push(s.weekIdx);
+      }
+    });
+    const vals = buildWeeks.map(w => wmap[w]).filter(v => v != null);
+    if (vals.length) {
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const out = vals.filter(v => v < 2.0 || v > 2.8).length;
+      report.infos.push(`週あたりINOLは平均${avg.toFixed(1)}（目標2.0〜2.8）${out === 0 ? '。最適な負荷量です。' : '。'}`);
+    }
+  }
+
+  state.program.report = report;
+  save();
+  return report;
+}
+
+function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = false) {
+  const dateStr = date.toISOString().split('T')[0];
+  let mainSets = [];
+  let rackup = null;
+  let phaseName = phase.name;
+
+  const deloadMult = isDeload ? 0.75 : 1;
+
+  if (isMaxDay) {
+    // MAXテスト日（試合シミュレーション）— 競技の試技係数に基づく3本勝負
+    // 第1試技0.90 / 第2試技0.97 / 第3試技1.025（ベンチプレスの標準係数）
+    // アップは各自で実施。記録は試技のみ。すべてポーズ＋コマンドで競技と同条件に
+    mainSets = [
+      { weight: pctWeight(rm1, 90), reps: 1, note: '🎙️ 第1試技（確実に・自信構築）', commands: true },
+      { weight: pctWeight(rm1, 97), reps: 1, note: '🎙️ 第2試技（バー速度で判断）', commands: true },
+      { weight: pctWeight(rm1, 102.5), reps: 1, note: '🎙️🎯 第3試技 NEW MAX', isTarget: true, commands: true },
+    ];
+    rackup = null;
+    return { date: dateStr, type, phaseName: 'MAX_TEST', weekIdx, mainSets, rackup, isMaxDay: true, rm1: round25(rm1) };
+  }
+
+  if (type === 'volume') {
+    // 高重量・低レップ志向（神経系強化）。量はINOL自動調整でセット数を確保
+    let pct, sets, reps;
+    if (phaseName === 'accumulation') { pct = 80; sets = 5; reps = 3; }
+    else if (phaseName === 'intensification') { pct = 85; sets = 5; reps = 2; }
+    else if (phaseName === 'peaking') { pct = 82; sets = 3; reps = 2; }
+    else { /* deload=テーパー週 */ pct = 70; sets = 2; reps = 3; }
+
+    for (let i = 0; i < sets; i++) {
+      mainSets.push({ weight: pctWeight(rm1, pct), reps, note: phaseName === 'deload' ? '軽め・疲労抜き' : '' });
+    }
+  }
+
+  if (type === 'technique') {
+    // ポーズ＋低レップで爆発的な立ち上がり（レートオブフォースデベロップメント）を強化
+    let pct, sets, reps, note;
+    if (phaseName === 'accumulation') { pct = 70; sets = 4; reps = 3; note = '1秒ポーズ・爆発的に挙上'; }
+    else if (phaseName === 'intensification') { pct = 75; sets = 4; reps = 2; note = '1秒ポーズ・爆発的に挙上'; }
+    else if (phaseName === 'peaking') { pct = 87; sets = 3; reps = 1; note = '🎙️ ポーズ＋コマンド練習'; }
+    else { /* deload=テーパー週 */ pct = 88; sets = 2; reps = 1; note = '🎙️ オープナー練習（コマンド）'; }
+
+    for (let i = 0; i < sets; i++) {
+      mainSets.push({ weight: pctWeight(rm1, pct), reps, note, commands: phaseName === 'peaking' || phaseName === 'deload' });
+    }
+  }
+
+  if (type === 'main') {
+    // メインは高強度シングル/ダブル中心で最大筋力・神経系を強化
+    let pct, sets, reps;
+    if (phaseName === 'accumulation') { pct = 86; sets = 4; reps = 2; }
+    else if (phaseName === 'intensification') { pct = 90; sets = 5; reps = 1; }
+    else { pct = 72; sets = 3; reps = 2; }
+
+    // ラックアップ（重量慣れ）— テーパー週は神経系を疲労させないため省略
+    if (phaseName !== 'deload') {
+      const rackupWeight = pctWeight(rm1, phaseName === 'peaking' ? 100 : 107);
+      rackup = { weight: rackupWeight, hold: phaseName === 'peaking' ? '2秒保持' : '3秒保持', sets: phaseName === 'peaking' ? 2 : 3,
+        note: phaseName === 'peaking' ? '試技前の神経系活性化（PAP）' : '重量慣れ・神経系活性化' };
+    }
+
+    if (phaseName === 'peaking') {
+      // 実現（realization）ブロック：高強度シングルへ漸増。試技に近い重量に習熟
+      mainSets.push({ weight: pctWeight(rm1, 90), reps: 1, note: '🎙️ ポーズ＋コマンド' , commands: true });
+      mainSets.push({ weight: pctWeight(rm1, 93), reps: 1, note: '🎙️ ポーズ＋コマンド（オープナー想定）', commands: true });
+      mainSets.push({ weight: pctWeight(rm1, 96), reps: 1, note: '🎙️ ポーズ＋コマンド（伸びれば挑戦）', commands: true });
+      // テーパー理論：量を抑えるため軽いバックオフ1本のみ
+      mainSets.push({ weight: pctWeight(rm1, 82), reps: 2, note: 'バックオフ（量確保）' });
+    } else if (phaseName === 'deload') {
+      // テーパー週＝試合直前：オープナー確認のみ。疲労を残さない
+      mainSets.push({ weight: pctWeight(rm1, 85), reps: 1, note: '🎙️ コマンド練習', commands: true });
+      mainSets.push({ weight: pctWeight(rm1, 90), reps: 1, note: '🎙️ オープナー確認（これで終了）', commands: true });
+    } else {
+      for (let i = 0; i < sets; i++) {
+        mainSets.push({ weight: pctWeight(rm1, pct), reps, note: '' });
+      }
+      // バックオフは1本のみ・低レップ（神経系優先で疲労を抑える）
+      mainSets.push({ weight: pctWeight(rm1, pct - 8), reps: reps + 1, note: 'バックオフセット' });
+    }
+  }
+
+  return { date: dateStr, type, phaseName, weekIdx, mainSets, rackup, isMaxDay: false, rm1: round25(rm1) };
+}
+
+// ===== RENDER PROGRAM =====
+function renderProgram() {
+  if (!state.program) {
+    document.getElementById('program-content').innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        <p style="margin-bottom:16px">プログラムがまだ生成されていません</p>
+        <button class="btn btn-primary btn-sm" onclick="switchTab('setup')">初期設定へ</button>
+      </div>`;
+    return;
+  }
+
+  const p = state.profile;
+  const sessions = state.program.sessions;
+  const totalWeeks = p.totalWeeks;
+
+  // 診断レポートカード
+  const rep = state.program.report;
+  if (rep) {
+    const colors = { ok:'var(--green)', caution:'var(--yellow)', adjusted:'var(--accent2)', warn:'var(--red)' };
+    const icons = { ok:'✅', caution:'⚠️', adjusted:'🔧', warn:'🚨' };
+    const c = colors[rep.status] || 'var(--text2)';
+    let repHtml = `<div class="card" style="border:1px solid ${c}33;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;color:${c};margin-bottom:8px">${icons[rep.status]} プログラム診断</div>`;
+    rep.warnings.forEach(w => { repHtml += `<div style="font-size:13px;color:var(--yellow);margin-bottom:6px;line-height:1.5">⚠️ ${w}</div>`; });
+    rep.infos.forEach(i => { repHtml += `<div style="font-size:13px;color:var(--text2);margin-bottom:4px;line-height:1.5">ℹ️ ${i}</div>`; });
+    if (rep.status === 'ok' && rep.warnings.length === 0) {
+      repHtml += `<div style="font-size:13px;color:var(--green)">このプログラムは安全に実現可能です。</div>`;
+    }
+    repHtml += '</div>';
+    document.getElementById('program-content').innerHTML = repHtml;
+  } else {
+    document.getElementById('program-content').innerHTML = '';
+  }
+
+  // Group by week
+  let html = `
+    <div class="card">
+      <div class="progress-ring">
+        <div class="ring-wrap">
+          <svg class="ring-svg" width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="26" fill="none" stroke="#334155" stroke-width="6"/>
+            <circle id="ringCircle" cx="32" cy="32" r="26" fill="none" stroke="#3b82f6" stroke-width="6"
+              stroke-dasharray="163.4" stroke-dashoffset="163.4" stroke-linecap="round"/>
+          </svg>
+          <div class="ring-pct" id="ringPct">0%</div>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:18px;font-weight:800">${p.currentMax}kg → ${p.targetMax}kg</div>
+          <div style="font-size:13px;color:var(--text2)">${p.totalWeeks}週間プログラム</div>
+          <div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span class="badge badge-blue">段階的+1.25〜2.5kg</span>
+            <button class="btn btn-outline btn-sm" onclick="openSettings()" style="font-size:11px;padding:4px 10px">設定変更</button>
+          </div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline btn-sm" onclick="exportData()" style="flex:1;font-size:12px;padding:8px">📥 バックアップ</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('restoreInput').click()" style="flex:1;font-size:12px;padding:8px">📤 復元</button>
+      </div>
+    </div>`;
+
+  // Count sessions by week
+  const weeks = {};
+  sessions.forEach(s => {
+    const w = s.weekIdx;
+    if (!weeks[w]) weeks[w] = [];
+    weeks[w].push(s);
+  });
+
+  const phaseLabels = { accumulation:'蓄積', intensification:'強化', peaking:'ピーキング', deload:'ディロード', MAX_TEST:'MAXテスト' };
+  const typeLabels = { volume:'ボリューム', technique:'テクニック', main:'メインセッション' };
+  const typeBadges = { volume:'badge-blue', technique:'badge-yellow', main:'badge-green' };
+
+  for (let w = 0; w < totalWeeks; w++) {
+    const wSessions = weeks[w] || [];
+    const phName = wSessions[0]?.phaseName || '';
+    const doneCount = wSessions.filter(s => state.completedSessions[s.date + s.type]).length;
+    const isCurrentWeek = isThisWeek(wSessions);
+
+    html += `<div class="week-card" ${isCurrentWeek ? 'id="current-week"' : ''}>
+      <div class="week-header">
+        <h3>Week ${w + 1} ${isCurrentWeek ? '◀ 今週' : ''}</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="badge ${phName === 'deload' ? 'badge-red' : phName === 'peaking' ? 'badge-yellow' : 'badge-blue'}">${phaseLabels[phName] || ''}</span>
+          <span style="font-size:12px;color:var(--text2)">${doneCount}/${wSessions.length}</span>
+        </div>
+      </div>`;
+
+    wSessions.forEach(s => {
+      const done = state.completedSessions[s.date + s.type];
+      const rm = state.program.sessions.find(x => x.date === s.date && x.type === s.type)?.rm1 || '-';
+      const mainPct = s.mainSets[0] ? Math.round(s.mainSets[0].weight / rm * 100) : 0;
+      const sessionInol = s.mainSets.reduce((acc, set) => acc + calcINOL(1, set.reps, Math.round(set.weight / rm * 100)), 0).toFixed(2);
+
+      html += `<div class="session-row" onclick="openSession('${s.date}','${s.type}')">
+        <div class="session-top">
+          <div>
+            <div class="session-date">${fmtDate(s.date)}</div>
+            <div class="session-type">${typeLabels[s.type] || s.type}</div>
+          </div>
+          <div style="text-align:right">
+            ${s.isMaxDay ? '<span class="max-day-badge">🏆 MAXテスト</span>' : `<span class="badge ${typeBadges[s.type]}">${mainPct}% × ${s.mainSets.length}set</span>`}
+            ${done ? '<div style="color:var(--green);font-size:12px;margin-top:4px">✓ 完了</div>' : ''}
+          </div>
+        </div>
+        <div class="sets-preview">INOL ${sessionInol} | 計画1RM ${rm}kg | ${s.mainSets.length}セット</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  document.getElementById('program-content').innerHTML += html;
+
+  // Update ring
+  const total = sessions.length;
+  const done = Object.keys(state.completedSessions).length;
+  const pctDone = total ? done / total : 0;
+  const circumference = 2 * Math.PI * 26;
+  const offset = circumference * (1 - pctDone);
+  setTimeout(() => {
+    const circle = document.getElementById('ringCircle');
+    const pctEl = document.getElementById('ringPct');
+    if (circle) { circle.style.strokeDashoffset = offset; }
+    if (pctEl) pctEl.textContent = Math.round(pctDone * 100) + '%';
+  }, 100);
+
+  // Scroll to current week
+  setTimeout(() => {
+    const el = document.getElementById('current-week');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 200);
+}
+
+function isThisWeek(sessions) {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  return sessions.some(s => {
+    const d = new Date(s.date);
+    const diff = Math.abs(d - today);
+    return diff < 7 * 24 * 60 * 60 * 1000;
+  });
+}
+
+// ===== OPEN SESSION =====
+function openSession(date, type) {
+  const session = state.program.sessions.find(s => s.date === date && s.type === type);
+  if (!session) return;
+
+  state.currentSession = session;
+  save();
+  switchTab('training');
+  renderTraining(session);
+}
+
+let lastTrainingKey = null;
+function renderTraining(session) {
+  const typeLabels = { volume:'ボリューム', technique:'テクニック', main:'メインセッション', MAX_TEST:'MAXテスト' };
+  const phaseLabels = { accumulation:'蓄積フェーズ', intensification:'強化フェーズ', peaking:'ピーキング', deload:'ディロード', MAX_TEST:'MAXテスト' };
+  const done = state.completedSessions[session.date + session.type];
+
+  // Get logged data if any
+  const logKey = session.date + '_' + session.type;
+  const logged = state.records.find(r => r.key === logKey);
+
+  // セッションが切り替わったら休憩実測タイマーをリセット
+  if (lastTrainingKey !== logKey) { restCheckTimestamps = []; lastTrainingKey = logKey; }
+
+  let html = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:20px;font-weight:800">${fmtDate(session.date)}</div>
+          <div style="font-size:14px;color:var(--text2);margin-top:2px">${typeLabels[session.type]} · ${phaseLabels[session.phaseName]}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:12px;color:var(--text2)">計画1RM</div>
+          <div style="font-size:22px;font-weight:800;color:var(--accent2)">${session.rm1}kg</div>
+        </div>
+      </div>
+    </div>`;
+
+  if (session.isMaxDay) {
+    html += `<div class="card" style="background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(239,68,68,.15));border:1px solid rgba(245,158,11,.3)">
+      <div style="font-size:15px;font-weight:700;color:var(--yellow);margin-bottom:8px">🏆 MAXテスト日</div>
+      <p style="font-size:13px;color:var(--text2)">十分なウォームアップ後、段階的に重量を上げてMAX更新を目指します。コンディションが良くなければ無理せず次週に延期してください。</p>
+    </div>`;
+  }
+
+  // INOL info
+  if (!session.isMaxDay) {
+    const totalINOL = session.mainSets.reduce((acc, set) => {
+      const pct = Math.round(set.weight / session.rm1 * 100);
+      return acc + calcINOL(1, set.reps, pct);
+    }, 0);
+    const inolColor = totalINOL < 0.8 ? '#94a3b8' : totalINOL <= 2.0 ? '#22c55e' : totalINOL <= 3.0 ? '#f59e0b' : '#ef4444';
+    const inolPct = Math.min(100, (totalINOL / 3.0) * 100);
+    html += `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="card-title" style="margin:0">INOL (疲労管理指標)</div>
+        <div style="font-size:22px;font-weight:800;color:${inolColor}">${totalINOL.toFixed(2)}</div>
+      </div>
+      <div class="inol-bar-bg"><div class="inol-bar-fill" style="width:${inolPct}%;background:${inolColor}"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-top:4px">
+        <span>維持 0.8</span><span style="color:var(--green)">最適 2.0</span><span>限界 3.0</span>
+      </div>
+    </div>`;
+  }
+
+  // 休憩実測（記録済みセッションのみ）
+  if (logged && logged.restActual && logged.restActual.length) {
+    const heavy = session.isMaxDay || session.phaseName === 'peaking' || session.type === 'main';
+    const recommended = heavy ? 180 : 120;
+    const avgRest = Math.round(logged.restActual.reduce((a,b)=>a+b,0) / logged.restActual.length);
+    const short = avgRest < recommended * 0.8;
+    const col = short ? 'var(--yellow)' : 'var(--green)';
+    html += `<div class="card" style="padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px">⏱️ 平均実測休憩（推奨 ${recommended}秒）</span>
+        <span style="font-weight:800;color:${col}">${avgRest}秒</span>
+      </div>
+      ${short ? `<div style="font-size:12px;color:var(--yellow);margin-top:4px">休憩がやや短めです。疲労が抜けきる前に次セットに入っている可能性があります。</div>` : ''}
+    </div>`;
+  }
+
+  // アップセット
+  const topWeight = Math.max(session.rackup?.weight || 0, ...session.mainSets.map(s => s.weight));
+  const warmups = buildWarmupSets(topWeight);
+  if (warmups.length) {
+    html += `<div class="phase-label">アップセット</div>`;
+    warmups.forEach((w, i) => {
+      html += `<div class="set-row" style="opacity:.75">
+        <div class="set-num">W${i+1}</div>
+        <div class="set-info">
+          <div class="set-weight">${w.weight}kg</div>
+          <div class="set-reps">${w.reps}rep</div>
+        </div>
+      </div>`;
+    });
+  }
+
+  // Rack-up
+  if (session.rackup) {
+    html += `<div class="phase-label">ラックアップ（重量慣れ）</div>
+    <div class="set-row" style="background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3)">
+      <div class="set-num" style="color:var(--accent2)">R</div>
+      <div class="set-info">
+        <div class="set-weight" style="color:var(--accent2)">${session.rackup.weight}kg × ${session.rackup.sets}回</div>
+        <div class="set-reps">${session.rackup.hold} — ${session.rackup.note}</div>
+      </div>
+    </div>`;
+  }
+
+  // Main sets
+  html += `<div class="phase-label">${session.isMaxDay ? '試技（アテンプト）' : 'メインセット'}</div>`;
+  // コマンド練習がある場合の案内
+  if (session.mainSets.some(s => s.commands)) {
+    html += `<div class="card" style="background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.3);padding:12px;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-bottom:4px">🎙️ 競技コマンド練習</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6">胸でしっかり静止 →「スタート」→ プレス →「ラック」の手順を再現。本番条件に習熟し、ピーキングの効果を最大化します。</div>
+    </div>`;
+  }
+  // 前回の同種目セッション（比較表示用）
+  const prevRecord = lastRecordOfType(session.type, session.date);
+  session.mainSets.forEach((set, i) => {
+    const pct = Math.round(set.weight / session.rm1 * 100);
+    const loggedSet = logged?.sets?.[i];
+    const prevSet = prevRecord?.sets?.[i];
+    html += `<div class="set-row" id="mainset-${i}" ${set.isTarget ? 'style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3)"' : ''}>
+      <div class="set-num" style="${set.isTarget ? 'color:var(--yellow)' : ''}">${i+1}</div>
+      <div class="set-info">
+        <div class="set-weight" style="${set.isTarget ? 'color:var(--yellow)' : ''}">${set.weight}kg</div>
+        <div class="set-reps">${set.reps}rep · ${pct}% ${set.note ? '— ' + set.note : ''}</div>
+        ${prevSet ? `<div style="font-size:12px;color:var(--text2);margin-top:2px">前回: ${prevSet.weight}kg × ${prevSet.reps}rep</div>` : ''}
+        ${loggedSet ? `<div style="font-size:12px;color:var(--green);margin-top:2px">記録: ${loggedSet.weight}kg × ${loggedSet.reps}rep</div>` : ''}
+      </div>
+      <button class="set-done ${loggedSet ? 'checked' : ''}" onclick="toggleSet(${i})">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+    </div>`;
+  });
+
+  // Log & Complete buttons
+  html += `<div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <button class="btn btn-outline" onclick="openLogModal()">記録を入力</button>
+    <button class="btn btn-success" onclick="completeSession()" ${done ? 'disabled style="opacity:.5"' : ''}>${done ? '✓ 完了済み' : 'セッション完了'}</button>
+  </div>`;
+
+  document.getElementById('training-content').innerHTML = html;
+  document.getElementById('headerTitle').textContent = '今日のトレーニング';
+  document.getElementById('headerSub').textContent = fmtDate(session.date);
+}
+
+let restCheckTimestamps = []; // セット完了チェックの実時刻（休憩実測用）
+
+function toggleSet(idx) {
+  const btn = document.querySelector(`#mainset-${idx} .set-done`);
+  btn.classList.toggle('checked');
+  // チェックON時のみ休憩タイマーを開始（種別に応じた推奨休憩）
+  if (btn.classList.contains('checked')) {
+    restCheckTimestamps.push(Date.now());
+    const s = state.currentSession;
+    const heavy = s && (s.isMaxDay || s.phaseName === 'peaking' || s.type === 'main');
+    startRest(heavy ? 180 : 120);
+  }
+}
+
+function completeSession() {
+  if (!state.currentSession) return;
+  const s = state.currentSession;
+  state.completedSessions[s.date + s.type] = true;
+  save();
+  renderProgram();
+
+  // Update training screen
+  document.querySelector('.btn-success').disabled = true;
+  document.querySelector('.btn-success').textContent = '✓ 完了済み';
+  document.querySelector('.btn-success').style.opacity = '.5';
+
+  setTimeout(() => {
+    alert('セッション完了！お疲れ様でした💪');
+  }, 100);
+}
+
+// ===== LOG MODAL =====
+function openLogModal() {
+  if (!state.currentSession) return;
+  const s = state.currentSession;
+  const logKey = s.date + '_' + s.type;
+  const existing = state.records.find(r => r.key === logKey);
+
+  let html = '';
+  s.mainSets.forEach((set, i) => {
+    const ex = existing?.sets?.[i] || {};
+    html += `<div class="log-input-row">
+      <div style="font-size:14px;font-weight:600;width:20px">${i+1}</div>
+      <input type="number" id="log-w-${i}" placeholder="${set.weight}" value="${ex.weight || ''}" step="2.5" style="font-size:14px">
+      <span style="color:var(--text2)">kg ×</span>
+      <input type="number" id="log-r-${i}" placeholder="${set.reps}" value="${ex.reps || ''}" style="font-size:14px">
+      <span style="color:var(--text2)">rep</span>
+      <span style="color:var(--text2);font-size:12px">RPE</span>
+      <div class="rpe-dots" id="rpeDots-${i}" style="gap:3px">
+        ${[6,7,8,9,10].map(v => `<button type="button" class="rpe-dot ${ex.rpe === v ? 'active' : ''}" style="width:26px;height:26px;font-size:12px" data-val="${v}" onclick="selectSetRPE(${i},${v})">${v}</button>`).join('')}
+      </div>
+    </div>`;
+  });
+
+  html += `<div style="background:var(--bg3);border-radius:10px;padding:12px;margin-top:4px;font-size:12px;line-height:1.7;color:var(--text2)">
+    <div><strong>RPE（主観的強度）はセットごとに選んでください</strong>（あと何回できたかで判断）</div>
+    <div><strong style="color:var(--red)">10</strong> … 限界。もう1回も上げられなかった（余力0）</div>
+    <div><strong style="color:var(--yellow)">9</strong> … あと1回だけできた（余力1）</div>
+    <div><strong style="color:var(--accent2)">8</strong> … あと2回できた（余力2）</div>
+    <div><strong style="color:var(--accent2)">7</strong> … あと3回できた（余力3）</div>
+    <div><strong style="color:var(--green)">6</strong> … あと4回以上、まだ余裕があった</div>
+    <div style="margin-top:6px;color:var(--text2)">※ セットごとに正確なRPEを選ぶことで、推定1RMやプログラム調整の精度が上がります。バックオフセットに一番きついセットのRPEを流用すると、実力が過大評価されます。</div>
+  </div>
+  <div class="form-group" style="margin-top:12px">
+    <label>今日の体調（自己申告）</label>
+    <div class="rpe-dots" id="fatigueDots">
+      ${[1,2,3,4,5].map(v => `<button type="button" class="rpe-dot ${existing?.fatigue === v ? 'active' : ''}" data-val="${v}" onclick="selectFatigue(${v})">${v}</button>`).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-top:4px">1=絶不調 〜 5=絶好調。実績データと組み合わせてコンディション分析に使います。</div>
+  </div>
+  <div class="form-group">
+    <label>メモ</label>
+    <input type="text" id="log-notes" placeholder="体調、フォームのポイントなど" value="${existing?.notes || ''}">
+  </div>
+  <button class="btn btn-primary" onclick="saveLog()">記録を保存</button>`;
+
+  document.getElementById('logModalBody').innerHTML = html;
+  document.getElementById('logModal').classList.add('open');
+}
+
+function selectSetRPE(i, v) {
+  document.querySelectorAll(`#rpeDots-${i} .rpe-dot`).forEach(d => d.classList.remove('active'));
+  event.target.classList.add('active');
+  event.target.dataset.val = v;
+}
+
+function selectFatigue(v) {
+  document.querySelectorAll('#fatigueDots .rpe-dot').forEach(d => d.classList.remove('active'));
+  event.target.classList.add('active');
+  event.target.dataset.val = v;
+}
+
+function saveLog() {
+  const s = state.currentSession;
+  const logKey = s.date + '_' + s.type;
+  const sets = s.mainSets.map((set, i) => {
+    const rpeEl = document.querySelector(`#rpeDots-${i} .rpe-dot.active`);
+    return {
+      weight: +document.getElementById(`log-w-${i}`).value || set.weight,
+      reps: +document.getElementById(`log-r-${i}`).value || set.reps,
+      rpe: rpeEl ? +rpeEl.dataset.val : null,
+    };
+  });
+  // セッション代表RPE＝トップセット（最重量）自身のRPE。他の記録(週平均RPE等)との互換のため保持
+  let topIdx = 0;
+  sets.forEach((set, i) => { if (set.weight > sets[topIdx].weight) topIdx = i; });
+  const rpe = sets[topIdx].rpe || 0;
+  const fatigueEl = document.querySelector('#fatigueDots .rpe-dot.active');
+  const fatigue = fatigueEl ? +fatigueEl.dataset.val : null;
+  const notes = document.getElementById('log-notes').value;
+  const restActual = restCheckTimestamps.length > 1
+    ? restCheckTimestamps.slice(1).map((t, i) => Math.round((t - restCheckTimestamps[i]) / 1000))
+    : [];
+  restCheckTimestamps = [];
+
+  // Remove existing
+  state.records = state.records.filter(r => r.key !== logKey);
+  state.records.push({ key: logKey, date: s.date, type: s.type, sets, rpe, fatigue, notes, restActual, timestamp: Date.now() });
+  state.records.sort((a,b) => a.date.localeCompare(b.date));
+  save();
+
+  closeLogModal();
+  renderTraining(state.currentSession);
+  renderRecords();
+  renderProgram();
+
+  // 記録を分析し、必要ならプログラム変更を「提案」する（自動では変えない）
+  const plan = planRecalibration(s, sets);
+  if (plan && plan.changed) {
+    setTimeout(() => confirmAndApply(plan), 150);
+  } else if (plan && plan.noRpe) {
+    setTimeout(() => alert('記録を保存しました。トップセット（最重量セット）のRPEを入力すると、実力に合わせたプログラム自動調整が行われます。'), 150);
+  } else if (plan) {
+    setTimeout(() => alert('記録を保存しました。分析の結果、プログラムは現状維持が最適です 👍'), 150);
+  } else {
+    setTimeout(() => alert('記録を保存しました。'), 150);
+  }
+}
+
+// ===== 記録に基づくプログラム修正の「計算」（stateは変更しない）=====
+// 記録のトップセット（最重量セット）のRPE補正推定1RM（recordE1RM＝分析画面と同一基準）を
+// そのまま現在の実力として採用し、未実施の以降セッションを再構築した案を返す。
+// ※以前は「計画セットとの比率」でrm1をスケールしていたが、計画セットは設計上余裕のある
+//   重量（RPE7〜8想定）なのに限界扱い（Epley素）で評価していたため、計画どおりこなすだけで
+//   毎回+5〜7%の上方修正が提案され、プログラムが実力から乖離するバグがあった。
+function planRecalibration(session, loggedSets) {
+  if (!state.program || !session.mainSets || !session.mainSets.length) return null;
+
+  const rec = state.records.find(r => r.key === session.date + '_' + session.type);
+  if (!rec) return { changed: false };
+  const top = topSetOf(rec);
+  if (!top || !top.weight || !top.reps) return { changed: false };
+  // RPEが無いと余力が不明で実力を測れない（限界扱いすると誤って下方修正される）ため提案しない
+  if (top.rpe == null && !rec.rpe) return { changed: false, noRpe: true };
+
+  const achievedRM = round25(recordE1RM(rec));
+  const prevRM = session.rm1;
+  const delta = achievedRM - prevRM;
+
+  // ほぼ計画通り（±2.5kg未満）なら修正不要
+  if (Math.abs(delta) < 2.5) return { changed: false, newRM: achievedRM, prevRM, delta };
+
+  // プロフィールはクローンして計算（liveなstateは変更しない）
+  const p = { ...state.profile };
+  const rate = PLAN_RATE;
+  const anchorWeek = session.weekIdx;
+
+  const pastRM = {};
+  state.program.sessions.forEach(s => { if (s.weekIdx <= anchorWeek) pastRM[s.weekIdx] = s.rm1; });
+  pastRM[anchorWeek] = achievedRM;
+
+  const origRemaining = p.totalWeeks - 1 - anchorWeek;
+  let remaining = origRemaining;
+  const neededGain = p.targetMax - achievedRM;
+
+  if (neededGain > 0) {
+    if (remaining <= 0) {
+      remaining = Math.max(2, Math.ceil(neededGain / rate));
+    } else if (neededGain / remaining > rate) {
+      remaining = Math.ceil(neededGain / rate); // 速すぎる→延長
+    } else {
+      const shortest = Math.max(2, Math.ceil(neededGain / rate));
+      remaining = Math.min(remaining, shortest); // 好調→短縮
+    }
+  } else {
+    remaining = Math.min(remaining, 4); // すでに目標到達→確認期間のみ
+  }
+
+  let newTotal = Math.min(anchorWeek + 1 + remaining, 52);
+  remaining = newTotal - anchorWeek - 1;
+  const extendedWeeks = remaining - origRemaining;
+  p.totalWeeks = newTotal;
+
+  const perWeek = remaining > 0 ? Math.max(0, neededGain) / remaining : 0;
+  const rmForWeek = (w) => {
+    if (w <= anchorWeek) return pastRM[w] !== undefined ? pastRM[w] : achievedRM;
+    if (w >= newTotal - 1) return p.targetMax;
+    if (programPhase(newTotal, w).name === 'deload') return round125(achievedRM + perWeek * (w - 1 - anchorWeek));
+    return round125(achievedRM + perWeek * (w - anchorWeek));
+  };
+
+  // 完了済み・記録済みは維持し、未実施分のみ再構築（案を組む・stateは触らない）
+  const oldByKey = {};
+  state.program.sessions.forEach(s => oldByKey[s.date + s.type] = s);
+  const rebuilt = buildProgramSessions(p, rmForWeek);
+  rebuilt.forEach((s, i) => {
+    const key = s.date + s.type;
+    const hasRecord = state.records.some(r => r.key === s.date + '_' + s.type);
+    if ((state.completedSessions[key] || hasRecord) && oldByKey[key]) {
+      rebuilt[i] = oldByKey[key];
+    }
+  });
+
+  return { changed: true, newRM: achievedRM, prevRM, delta, extendedWeeks, newTotal, rebuilt, newProfile: p };
+}
+
+// 提案を実際に適用する
+function applyRecalibration(plan) {
+  if (!plan || !plan.changed || !plan.rebuilt) return;
+  state.profile = plan.newProfile;
+  state.program.profile = plan.newProfile;
+  state.program.sessions = plan.rebuilt;
+  if (state.currentSession) {
+    const cs = state.program.sessions.find(s => s.date === state.currentSession.date && s.type === state.currentSession.type);
+    if (cs) state.currentSession = cs;
+  }
+  validateAndOptimize();
+  save();
+}
+
+// 分析結果を提示して「変更しますか？」と確認 → 承認時のみ適用
+function confirmAndApply(plan) {
+  if (!plan || !plan.changed) return;
+  const dir = plan.delta < 0 ? '下方修正' : '上方修正';
+  let msg = '【記録の分析結果】\n';
+  msg += `実績（RPE補正）から現在の推定1RMは ${plan.prevRM}kg → ${plan.newRM}kg（${dir}）と評価しました。\n\n`;
+  if (plan.extendedWeeks > 0) {
+    msg += `📉 安全なペースを保つため、期間を ${plan.extendedWeeks}週間 延長する提案です（全${plan.newTotal}週間）。`;
+  } else if (plan.extendedWeeks < 0) {
+    msg += plan.delta > 0
+      ? `📈 好調のため、期間を ${-plan.extendedWeeks}週間 短縮できます（全${plan.newTotal}週間）。`
+      : `📐 実力に合わせて残り期間を再計算し、${-plan.extendedWeeks}週間 短縮します（全${plan.newTotal}週間）。`;
+  } else {
+    msg += `以降のメニュー重量を再計算します（期間は変更なし・全${plan.newTotal}週間）。`;
+  }
+  msg += '\n\nこの内容でプログラムを変更しますか？';
+
+  if (confirm(msg)) {
+    applyRecalibration(plan);
+    renderProgram();
+    if (state.currentSession) renderTraining(state.currentSession);
+    if (document.getElementById('screen-analysis').classList.contains('active')) renderAnalysis();
+    setTimeout(() => alert('プログラムを更新しました 💪'), 100);
+  }
+}
+
+// 分析画面の「メニューを見直す」ボタン：最新の記録から提案を出す
+function proposeAdjustFromAnalysis() {
+  const rec = [...state.records].reverse().find(r =>
+    state.program && state.program.sessions.some(s => s.date === r.date && s.type === r.type));
+  if (!rec) { alert('メニュー調整には記録の入力が必要です。'); return; }
+  const sess = state.program.sessions.find(s => s.date === rec.date && s.type === rec.type);
+  const plan = planRecalibration(sess, rec.sets);
+  if (plan && plan.noRpe) {
+    alert('最新の記録にRPEが入力されていないため、実力を評価できません。記録を開いてトップセット（最重量セット）のRPEを入力してください。');
+    return;
+  }
+  if (!plan || !plan.changed) {
+    alert('記録を分析した結果、現在のプログラムが最適です。変更の必要はありません 👍');
+    return;
+  }
+  confirmAndApply(plan);
+}
+
+// 週ごとの平均RPEを返す（プログラム週 weekIdx 単位）
+function weeklyRpeSeries() {
+  const map = {};
+  if (!state.program) return { keys: [], labels: [], data: [] };
+  state.records.forEach(r => {
+    if (!r.rpe) return;
+    const sess = state.program.sessions.find(s => s.date === r.date && s.type === r.type);
+    if (!sess) return;
+    const w = sess.weekIdx;
+    (map[w] = map[w] || { sum: 0, count: 0 });
+    map[w].sum += r.rpe; map[w].count++;
+  });
+  const keys = Object.keys(map).map(Number).sort((a, b) => a - b);
+  return {
+    keys,
+    labels: keys.map(w => `W${w + 1}`),
+    data: keys.map(w => +(map[w].sum / map[w].count).toFixed(2)),
+  };
+}
+
+// ===== エビデンスベースの負荷・実力指標 =====
+
+// 日付ごとのトーナジ（総挙上量 kg）を返す { 'YYYY-MM-DD': tonnage }
+function dailyLoadMap() {
+  const map = {};
+  state.records.forEach(r => {
+    if (!r.sets) return;
+    const t = r.sets.reduce((a, s) => a + (s.weight || 0) * (s.reps || 0), 0);
+    map[r.date] = (map[r.date] || 0) + t;
+  });
+  return map;
+}
+
+// ACWR（急性:慢性負荷比 / Gabbett）。急性=直近7日、慢性=直近28日の週平均
+function calcACWR() {
+  const map = dailyLoadMap();
+  const dates = Object.keys(map);
+  if (!dates.length) return null;
+  const today = new Date();
+  let acute = 0, chronic = 0;
+  let earliest = null;
+  dates.forEach(d => {
+    const diff = (today - new Date(d)) / 86400000;
+    if (diff < 0 || diff >= 28) return;
+    chronic += map[d];
+    if (diff < 7) acute += map[d];
+    if (earliest === null || new Date(d) < earliest) earliest = new Date(d);
+  });
+  const chronicWeekly = chronic / 4;
+  // 慢性負荷の履歴が3週未満なら比率は信頼できない（算出中扱い）
+  const spanDays = earliest ? (today - earliest) / 86400000 : 0;
+  const established = spanDays >= 21 && chronicWeekly > 0;
+  const ratio = chronicWeekly > 0 ? acute / chronicWeekly : null;
+  return { acute, chronicWeekly, ratio, established };
+}
+
+// Foster法：モノトニー（負荷の単調さ）と週間ストレイン
+// セッション負荷はsRPE近似（RPE × セット数 × 10）
+function fosterMetrics() {
+  const today = new Date();
+  const daily = new Array(7).fill(0);
+  let trainDays = 0;
+  state.records.forEach(r => {
+    if (!r.sets || !r.sets.length) return;
+    const diff = Math.floor((today - new Date(r.date)) / 86400000);
+    if (diff < 0 || diff >= 7) return;
+    daily[diff] += (r.rpe || 8) * r.sets.length * 10;
+  });
+  daily.forEach(v => { if (v > 0) trainDays++; });
+  if (trainDays <= 1) return null; // SD=0になり計算不能
+  const meanL = daily.reduce((a, b) => a + b, 0) / 7;
+  const sd = Math.sqrt(daily.reduce((a, b) => a + (b - meanL) ** 2, 0) / 7);
+  if (sd === 0) return null;
+  const monotony = meanL / sd;
+  const weekLoad = daily.reduce((a, b) => a + b, 0);
+  return { monotony, strain: weekLoad * monotony, weekLoad };
+}
+
+// 指定日以前の最新体重（無ければプロフィール体重）
+function bwAt(date) {
+  let bw = state.profile ? state.profile.weight : null;
+  for (const b of state.bodyweights) {
+    if (b.date <= date) bw = b.weight; else break;
+  }
+  return bw;
+}
+
+// IPF GLポイント（クラシック・ベンチ単体）
+function ipfGL(e1rm, bw) {
+  if (!e1rm || !bw) return null;
+  const female = state.profile && state.profile.sex === 'female';
+  const [A, B, C] = female
+    ? [142.40398, 442.52671, 0.04724]
+    : [320.98041, 281.40258, 0.01008];
+  const denom = A - B * Math.exp(-C * bw);
+  return denom > 0 ? e1rm * 100 / denom : null;
+}
+
+// 相対筋力の推移（体重比とIPF GLポイント）
+function relStrengthSeries() {
+  const labels = [], ratio = [], gl = [];
+  state.records.forEach(r => {
+    if (!r.sets || !r.sets.length) return;
+    const e = recordE1RM(r);
+    const bw = bwAt(r.date);
+    if (!bw) return;
+    labels.push(fmtDate(r.date));
+    ratio.push(+(e / bw).toFixed(2));
+    const g = ipfGL(e, bw);
+    gl.push(g != null ? +g.toFixed(1) : null);
+  });
+  return { labels, ratio, gl };
+}
+
+// 推定1RMの推移に線形回帰をかけ、伸びペースと目標到達予測日を返す
+function regressionForecast() {
+  const recs = state.records.filter(r => r.sets && r.sets.length);
+  if (recs.length < 4 || !state.profile) return null;
+  const use = recs.slice(-8);
+  const t0 = new Date(use[0].date);
+  const pts = use.map(r => ({
+    x: (new Date(r.date) - t0) / 86400000,
+    y: recordE1RM(r),
+  }));
+  const n = pts.length;
+  const mx = pts.reduce((a, p) => a + p.x, 0) / n;
+  const my = pts.reduce((a, p) => a + p.y, 0) / n;
+  let sxy = 0, sxx = 0;
+  pts.forEach(p => { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; });
+  if (sxx === 0) return null;
+  const slope = sxy / sxx;             // kg/日
+  const intercept = my - slope * mx;
+  const perWeek = slope * 7;
+  const target = state.profile.targetMax;
+  const current = intercept + slope * ((new Date() - t0) / 86400000);
+  let reachDate = null;
+  if (slope > 0 && current < target) {
+    const daysTo = (target - intercept) / slope;
+    reachDate = new Date(t0.getTime() + daysTo * 86400000);
+  } else if (current >= target) {
+    reachDate = new Date();
+  }
+  // プログラム終了予定日
+  let planEnd = null;
+  if (state.program && state.program.sessions.length) {
+    planEnd = new Date(state.program.sessions[state.program.sessions.length - 1].date);
+  }
+  const diffWeeks = (reachDate && planEnd) ? (reachDate - planEnd) / (86400000 * 7) : null;
+  return { perWeek, current, target, reachDate, planEnd, diffWeeks };
+}
+
+// ===== コンディション5段階評価 =====
+// 直近の記録から「調子」を分析し、5段階（絶好調〜全然不調）で返す。
+function analyzeCondition() {
+  const recs = state.records.filter(r => r.sets && r.sets.length);
+  if (recs.length < 2) return null;
+  const recent = recs.slice(-4); // 直近4回
+  const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+
+  // 各記録のRPE補正推定1RM
+  const es = recent.map(r => recordE1RM(r));
+
+  // 計画（その日の推定1RM）に対する実力比
+  const perfs = [];
+  recent.forEach((r, i) => {
+    const sess = state.program?.sessions.find(s => s.date === r.date && s.type === r.type);
+    if (sess && sess.rm1) perfs.push(es[i] / sess.rm1);
+  });
+  const avgPerf = perfs.length ? mean(perfs) : 1;
+
+  // モメンタム（前半平均 → 後半平均の伸び）
+  const half = Math.max(1, Math.floor(es.length / 2));
+  const momentum = es.length >= 2 ? mean(es.slice(-half)) - mean(es.slice(0, half)) : 0;
+
+  // 平均RPE
+  const rpeR = recent.filter(r => r.rpe);
+  const avgRpe = rpeR.length ? mean(rpeR.map(r => r.rpe)) : null;
+
+  // スコア化（0〜100）
+  let score = 50 + (avgPerf - 1) * 400 + momentum * 4;
+
+  // 体重・体脂肪トレンドを加味（直近28日以内の変化）
+  let bwReason = null, fatReason = null;
+  const bws = state.bodyweights;
+  if (bws.length >= 2) {
+    const last = bws[bws.length - 1];
+    const cutoff = new Date(last.date); cutoff.setDate(cutoff.getDate() - 28);
+    const prior = bws.find(b => new Date(b.date) >= cutoff) || bws[bws.length - 2];
+    const bwDelta = last.weight - prior.weight;
+    const pct = prior.weight ? bwDelta / prior.weight * 100 : 0;
+    // 体脂肪の変化（両方に記録があるときのみ）
+    const fatDelta = (last.fat != null && prior.fat != null) ? last.fat - prior.fat : null;
+
+    if (bwDelta <= -1 && pct <= -1.2) {
+      // 減量局面：体脂肪が同時に落ちていれば筋量は保たれている可能性が高い
+      if (fatDelta != null && fatDelta <= -0.3) {
+        score -= 3;
+        bwReason = `体重 ${bwDelta.toFixed(1)}kg・体脂肪 ${fatDelta.toFixed(1)}% と減少（順調な減量。挙上を維持できていれば問題なし）`;
+      } else if (fatDelta != null && fatDelta >= 0.2) {
+        score -= 8;
+        bwReason = `体重減の一方で体脂肪は +${fatDelta.toFixed(1)}%（筋量低下の懸念。栄養・回復を見直しましょう）`;
+      } else {
+        score -= 6;
+        bwReason = `体重が減少傾向（${bwDelta.toFixed(1)}kg）。リカバリー不足に注意`;
+      }
+    } else if (bwDelta >= 0.5) {
+      score += 3;
+      bwReason = `体重が増加傾向（+${bwDelta.toFixed(1)}kg）で出力を支えています`;
+      if (fatDelta != null && fatDelta >= 0.5) fatReason = `ただし体脂肪も +${fatDelta.toFixed(1)}%（増量ペースに注意）`;
+    } else {
+      bwReason = `体重はほぼ安定（${bwDelta >= 0 ? '+' : ''}${bwDelta.toFixed(1)}kg）`;
+      if (fatDelta != null && Math.abs(fatDelta) >= 0.3) fatReason = `体脂肪は ${fatDelta >= 0 ? '+' : ''}${fatDelta.toFixed(1)}%`;
+    }
+  }
+
+  // 週平均RPEの推移（上昇＝疲労蓄積のサイン）
+  let rpeTrendReason = null;
+  const wr = weeklyRpeSeries();
+  const wrTrend = wr.data.length >= 2 ? wr.data[wr.data.length - 1] - wr.data[wr.data.length - 2] : 0;
+  if (wr.data.length >= 2) {
+    if (wrTrend >= 0.7) { score -= 4; rpeTrendReason = `週平均RPEが上昇中（+${wrTrend.toFixed(1)}）。疲労が溜まりつつあります`; }
+    else if (wrTrend <= -0.7) { score += 2; rpeTrendReason = `週平均RPEが低下（${wrTrend.toFixed(1)}）。疲労が抜けてきています`; }
+  }
+
+  // 主観的疲労チェックイン（記録時の自己申告）
+  let fatigueReason = null;
+  const fatigueRecs = recent.filter(r => r.fatigue != null);
+  if (fatigueRecs.length) {
+    const avgFatigue = mean(fatigueRecs.map(r => r.fatigue));
+    if (avgFatigue <= 2) {
+      score -= 4;
+      fatigueReason = `自己申告の体調が低め（平均${avgFatigue.toFixed(1)}/5）`;
+    } else if (avgFatigue >= 4) {
+      score += 2;
+      fatigueReason = `自己申告の体調は良好（平均${avgFatigue.toFixed(1)}/5）`;
+    }
+  }
+
+  // ACWR（急性:慢性負荷比）— 急激な負荷増は怪我リスク
+  let acwrReason = null, acwrSuggest = null;
+  const acwr = calcACWR();
+  if (acwr && acwr.established && acwr.ratio != null) {
+    if (acwr.ratio > 1.5) {
+      score -= 8;
+      acwrReason = `ACWR ${acwr.ratio.toFixed(2)}：急激な負荷増。怪我リスクが高い状態です`;
+      acwrSuggest = '直近の負荷が急増しています（ACWR>1.5）。今週はディロード（負荷を落とす）ことを強く推奨します。';
+    } else if (acwr.ratio > 1.3) {
+      score -= 4;
+      acwrReason = `ACWR ${acwr.ratio.toFixed(2)}：負荷がやや増えすぎです（1.3以下が安全域）`;
+    } else if (acwr.ratio < 0.8) {
+      score -= 2;
+      acwrReason = `ACWR ${acwr.ratio.toFixed(2)}：負荷が落ちてデトレーニング気味です`;
+    } else {
+      acwrReason = `ACWR ${acwr.ratio.toFixed(2)}：負荷の増やし方は最適な範囲です`;
+    }
+  }
+
+  // モノトニー（Foster法）— 毎日同じ負荷はオーバートレーニングの温床
+  let monoReason = null;
+  const fm = fosterMetrics();
+  if (fm) {
+    if (fm.monotony > 2.0) {
+      score -= 4;
+      monoReason = `モノトニー ${fm.monotony.toFixed(1)}：トレーニングが単調です（強弱の波をつけましょう）`;
+    } else if (fm.monotony > 1.5) {
+      monoReason = `モノトニー ${fm.monotony.toFixed(1)}：やや単調。高負荷日と軽い日のメリハリを意識`;
+    }
+  }
+
+  // 相対筋力 — 減量中でも体重比が伸びていればポジティブに評価
+  let relReason = null;
+  const rel = relStrengthSeries();
+  if (rel.ratio.length >= 2) {
+    const relDelta = rel.ratio[rel.ratio.length - 1] - rel.ratio[0];
+    if (bwReason && bwReason.includes('減') && relDelta >= 0.02) {
+      score += 3;
+      relReason = `体重比は ${rel.ratio[rel.ratio.length - 1].toFixed(2)}倍 に向上中（減量しながら相対筋力アップ）`;
+    }
+  }
+
+  score = Math.max(0, Math.min(100, score));
+
+  let level, label, color, emoji;
+  if (score >= 75) { level = 5; label = '絶好調'; color = 'var(--green)'; emoji = '🔥'; }
+  else if (score >= 60) { level = 4; label = 'やや好調'; color = '#4ade80'; emoji = '💪'; }
+  else if (score >= 40) { level = 3; label = '普通'; color = 'var(--accent2)'; emoji = '🙂'; }
+  else if (score >= 25) { level = 2; label = 'やや不調'; color = 'var(--yellow)'; emoji = '😐'; }
+  else { level = 1; label = '全然不調'; color = 'var(--red)'; emoji = '😟'; }
+
+  const reasons = [];
+  if (momentum > 1) reasons.push(`直近で推定1RMが +${momentum.toFixed(1)}kg 伸びています`);
+  else if (momentum < -1) reasons.push(`直近で推定1RMが ${momentum.toFixed(1)}kg 下降しています`);
+  else reasons.push('推定1RMはほぼ横ばいです');
+  if (avgPerf > 1.03) reasons.push('計画重量に対して実力が上回っています');
+  else if (avgPerf < 0.97) reasons.push('計画重量に対して実力がやや不足しています');
+  else reasons.push('計画どおりのペースで進んでいます');
+  if (avgRpe !== null) {
+    if (avgRpe >= 9) reasons.push(`平均RPE ${avgRpe.toFixed(1)} と高め（疲労傾向あり）`);
+    else if (avgRpe <= 7) reasons.push(`平均RPE ${avgRpe.toFixed(1)} と余力あり`);
+  }
+  if (bwReason) reasons.push(bwReason);
+  if (fatReason) reasons.push(fatReason);
+  if (relReason) reasons.push(relReason);
+  if (rpeTrendReason) reasons.push(rpeTrendReason);
+  if (acwrReason) reasons.push(acwrReason);
+  if (monoReason) reasons.push(monoReason);
+  if (fatigueReason) reasons.push(fatigueReason);
+
+  let suggest = null;
+  if (acwrSuggest) suggest = acwrSuggest; // 怪我リスクは最優先で提示
+  else if (level >= 4) suggest = 'この調子なら目標達成を前倒しできる可能性があります。メニューの短縮を検討できます。';
+  else if (level <= 2) suggest = '無理は禁物です。期間を延ばし、負荷を落として安全に伸ばすことを検討しましょう。';
+  // 疲労が明確なら、レベルに関わらず回復優先の助言を出す
+  if (wrTrend >= 0.7 && !suggest) {
+    suggest = '週平均RPEが上がっています。ディロードや期間延長で回復を優先することを検討しましょう。';
+  }
+  // 回帰予測が予定より大きく遅れていれば期間延長を促す
+  const fc = regressionForecast();
+  if (!suggest && fc && fc.diffWeeks != null && fc.diffWeeks >= 2) {
+    suggest = `現在の伸びペースだと目標到達は予定より約${Math.round(fc.diffWeeks)}週遅れる見込みです。期間延長の検討をおすすめします。`;
+  }
+
+  return { score, level, label, color, emoji, reasons, suggest };
+}
+
+function closeLogModal() { document.getElementById('logModal').classList.remove('open'); }
+
+// ===== RECORDS =====
+// 体重記録カードのHTML（記録画面の先頭に表示）
+function bodyweightCardHTML() {
+  const today = new Date().toISOString().split('T')[0];
+  const bws = state.bodyweights;
+  const latest = bws.length ? bws[bws.length - 1] : null;
+  let trend = '';
+  if (bws.length >= 2) {
+    const d = latest.weight - bws[bws.length - 2].weight;
+    const sign = d > 0 ? '+' : '';
+    const col = d > 0 ? 'var(--yellow)' : d < 0 ? 'var(--accent2)' : 'var(--text2)';
+    trend = `<span style="color:${col};font-size:12px">前回比 ${sign}${d.toFixed(1)}kg</span>`;
+  }
+  let listHtml = '';
+  if (bws.length) {
+    listHtml = '<div class="divider"></div>' + [...bws].reverse().slice(0, 6).map(b =>
+      `<div class="record-row" style="padding:8px 0">
+        <div style="font-size:13px">${fmtDate(b.date)}</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-weight:700;color:var(--accent2)">${b.weight}kg</span>
+          ${b.fat != null ? `<span style="font-size:12px;color:var(--yellow)">体脂肪 ${b.fat}%</span>` : ''}
+          <button onclick="deleteBodyweight('${b.date}')" style="background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer;line-height:1">×</button>
+        </div>
+      </div>`).join('');
+  }
+  return `<div class="card">
+    <div class="card-title">⚖️ 体重・体脂肪を記録</div>
+    ${latest ? `<div style="margin-bottom:10px">最新: <strong style="font-size:18px">${latest.weight}kg</strong>${latest.fat != null ? ` / 体脂肪 <strong>${latest.fat}%</strong>` : ''} ${trend}</div>` : '<div style="font-size:13px;color:var(--text2);margin-bottom:10px">体重・体脂肪を入力すると分析・コンディション判定に反映されます。</div>'}
+    <input type="date" id="bw-date" value="${today}" style="font-size:14px;margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="number" id="bw-weight" placeholder="体重" step="0.1" style="flex:1;font-size:14px">
+      <span style="color:var(--text2)">kg</span>
+      <input type="number" id="bw-fat" placeholder="体脂肪(任意)" step="0.1" style="flex:1;font-size:14px">
+      <span style="color:var(--text2)">%</span>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="saveBodyweight()" style="width:100%;margin-top:10px">記録する</button>
+    ${listHtml}
+  </div>`;
+}
+
+function renderRecords() {
+  const records = state.records;
+  let html = bodyweightCardHTML();
+
+  if (records.length === 0) {
+    html += `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+      <p>まだトレーニング記録がありません</p>
+    </div>`;
+    document.getElementById('records-content').innerHTML = html;
+    return;
+  }
+
+  // Summary stats
+  const maxEstimates = records.flatMap(r =>
+    r.sets.map(s => epley(s.weight, s.reps))
+  );
+  const bestEstimate = Math.max(...maxEstimates);
+  const totalSets = records.reduce((a,r) => a + r.sets.length, 0);
+  const totalVol = records.reduce((a,r) => a + r.sets.reduce((b,s) => b + s.weight * s.reps, 0), 0);
+
+  html += `<div class="stat-grid">
+    <div class="stat-box"><div class="stat-val">${Math.round(bestEstimate)}</div><div class="stat-unit">kg</div><div class="stat-lbl">推定1RM (最高)</div></div>
+    <div class="stat-box"><div class="stat-val">${records.length}</div><div class="stat-unit">回</div><div class="stat-lbl">セッション数</div></div>
+    <div class="stat-box"><div class="stat-val">${totalSets}</div><div class="stat-unit">set</div><div class="stat-lbl">総セット数</div></div>
+    <div class="stat-box"><div class="stat-val">${Math.round(totalVol/1000)}t</div><div class="stat-unit"></div><div class="stat-lbl">総挙上量</div></div>
+  </div>`;
+
+  html += '<div class="card"><div class="card-title">記録一覧</div>';
+  const typeLabels = { volume:'ボリューム', technique:'テクニック', main:'メイン', MAX_TEST:'MAXテスト' };
+
+  [...records].reverse().forEach(r => {
+    const best = Math.max(...r.sets.map(s => epley(s.weight, s.reps)));
+    html += `<div class="record-row" onclick="openSession('${r.date}','${r.type}')">
+      <div>
+        <div style="font-size:14px;font-weight:600">${fmtDate(r.date)}</div>
+        <div style="font-size:12px;color:var(--text2)">${typeLabels[r.type] || r.type} · ${r.sets.length}セット</div>
+        ${r.notes ? `<div style="font-size:12px;color:var(--text2);margin-top:2px">${r.notes}</div>` : ''}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:16px;font-weight:700;color:var(--accent2)">${r.sets[0]?.weight || '-'}kg</div>
+        <div style="font-size:12px;color:var(--text2)">推定RM ${Math.round(best)}kg</div>
+        ${r.rpe ? `<div style="font-size:12px;color:var(--yellow)">RPE ${r.rpe}</div>` : ''}
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+
+  // Delete all button
+  html += `<button class="btn btn-outline" style="color:var(--red);border-color:var(--red);margin-top:8px" onclick="clearRecords()">記録をすべて削除</button>`;
+
+  document.getElementById('records-content').innerHTML = html;
+}
+
+function clearRecords() {
+  if (!confirm('すべての記録を削除しますか？')) return;
+  state.records = [];
+  save();
+  renderRecords();
+}
+
+// ===== 体重記録 =====
+function saveBodyweight() {
+  const dateEl = document.getElementById('bw-date');
+  const wEl = document.getElementById('bw-weight');
+  const fatEl = document.getElementById('bw-fat');
+  const date = dateEl.value;
+  const weight = +wEl.value;
+  const fat = fatEl.value !== '' ? +fatEl.value : null; // 体脂肪率は任意
+  if (!date || !weight) { alert('日付と体重を入力してください'); return; }
+  // 同じ日付があれば上書き
+  state.bodyweights = state.bodyweights.filter(b => b.date !== date);
+  state.bodyweights.push({ date, weight, fat });
+  state.bodyweights.sort((a, b) => a.date.localeCompare(b.date));
+  // プロフィールの体重も最新値に同期（プログラム表示等で使用）
+  if (state.profile) {
+    const latest = state.bodyweights[state.bodyweights.length - 1];
+    state.profile.weight = latest.weight;
+  }
+  save();
+  wEl.value = '';
+  fatEl.value = '';
+  renderRecords();
+  alert(`体重 ${weight}kg${fat != null ? ` / 体脂肪 ${fat}%` : ''}（${fmtDate(date)}）を記録しました。`);
+}
+
+function deleteBodyweight(date) {
+  if (!confirm(`${fmtDate(date)} の体重記録を削除しますか？`)) return;
+  state.bodyweights = state.bodyweights.filter(b => b.date !== date);
+  save();
+  renderRecords();
+}
+
+// ===== ANALYSIS =====
+let charts = {};
+function renderAnalysis() {
+  const records = state.records;
+  const latestBw = state.bodyweights.length ? state.bodyweights[state.bodyweights.length - 1].weight : (state.profile?.weight || null);
+  if (records.length < 2) {
+    document.getElementById('analysis-content').innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <p>グラフを表示するには<br>2回以上の記録が必要です</p>
+    </div>`;
+    return;
+  }
+
+  // Destroy old charts
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+
+  const labels = records.map(r => fmtDate(r.date));
+  const estRMs = records.map(r => Math.round(Math.max(...r.sets.map(s => epley(s.weight, s.reps)))));
+  // RPE補正推定1RM（記録のRPEから「あと何回できたか」を加味）
+  const rpeRMs = records.map(r => Math.round(recordE1RM(r)));
+  const maxWeights = records.map(r => Math.max(...r.sets.map(s => s.weight)));
+  const volumes = records.map(r => Math.round(r.sets.reduce((a,s) => a + s.weight * s.reps, 0)));
+  // トレーニング画面と同じ基準（その日の計画1RM=rm1）でINOLを算出（記録自体から逆算するとブレるため）
+  const inols = records.map(r => {
+    const sess = state.program?.sessions.find(s => s.date === r.date && s.type === r.type);
+    const rm = sess ? sess.rm1 : Math.max(...r.sets.map(s => epley(s.weight, s.reps)));
+    return +r.sets.reduce((a,s) => {
+      const pct = Math.round(s.weight / rm * 100);
+      return a + calcINOL(1, s.reps, pct);
+    }, 0).toFixed(2);
+  });
+
+  const profile = state.profile;
+  const targetMax = profile?.targetMax || null;
+
+  const chartDefaults = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#94a3b8', maxTicksLimit: 6, font: { size: 11 } }, grid: { color: 'rgba(255,255,255,.05)' } },
+      y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,.05)' } }
+    }
+  };
+
+  // ===== サマリー統計 =====
+  const latestRpeRM = rpeRMs[rpeRMs.length - 1];
+  const firstRpeRM = rpeRMs[0];
+  const bestRpeRM = Math.max(...rpeRMs);
+  const rpeRecords = records.filter(r => r.rpe);
+  const avgRpe = rpeRecords.length ? (rpeRecords.reduce((a, r) => a + r.rpe, 0) / rpeRecords.length) : null;
+  const cur = profile?.currentMax || null;
+  const gain = latestRpeRM - firstRpeRM;
+  let progress = null;
+  if (cur && targetMax && targetMax > cur) {
+    progress = Math.max(0, Math.min(100, (latestRpeRM - cur) / (targetMax - cur) * 100));
+  }
+
+  let html = '';
+
+  // ===== コンディション5段階評価カード =====
+  const cond = analyzeCondition();
+  if (cond) {
+    html += `<div class="card" style="border:1px solid ${cond.color}66">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-title" style="margin:0">🩺 コンディション分析</div>
+        <div style="font-size:20px;font-weight:800;color:${cond.color}">${cond.emoji} ${cond.label}</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;height:8px;overflow:hidden"><div style="height:8px;border-radius:4px;width:${cond.score}%;background:${cond.color};transition:width .5s"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-top:4px">
+        <span>全然不調</span><span>やや不調</span><span>普通</span><span>やや好調</span><span>絶好調</span>
+      </div>
+      <ul style="margin:10px 0 0;padding-left:18px">
+        ${cond.reasons.map(r => `<li style="font-size:13px;color:var(--text2);line-height:1.7">${r}</li>`).join('')}
+      </ul>
+      ${cond.suggest ? `<div style="background:var(--bg3);border-radius:10px;padding:10px 12px;margin-top:10px;font-size:13px;color:var(--text);line-height:1.6">💡 ${cond.suggest}</div>` : ''}
+      <button class="btn btn-outline btn-sm" onclick="proposeAdjustFromAnalysis()" style="width:100%;margin-top:12px">📋 記録を分析してメニューを見直す</button>
+    </div>`;
+  }
+
+  // サマリー統計カード
+  html += `<div class="stat-grid">
+    <div class="stat-box"><div class="stat-val">${latestRpeRM}</div><div class="stat-unit">kg</div><div class="stat-lbl">現在の推定1RM<br>(RPE補正・最新)</div></div>
+    <div class="stat-box"><div class="stat-val">${gain >= 0 ? '+' : ''}${gain}</div><div class="stat-unit">kg</div><div class="stat-lbl">開始からの伸び</div></div>
+    <div class="stat-box"><div class="stat-val">${progress !== null ? Math.round(progress) : '—'}</div><div class="stat-unit">${progress !== null ? '%' : ''}</div><div class="stat-lbl">目標達成率</div></div>
+    <div class="stat-box"><div class="stat-val">${avgRpe !== null ? avgRpe.toFixed(1) : '—'}</div><div class="stat-unit"></div><div class="stat-lbl">平均RPE</div></div>
+  </div>`;
+
+  if (targetMax && cur) {
+    html += `<div class="card" style="padding:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:6px">
+        <span>${cur}kg（開始）</span><span style="color:var(--accent2)">目標 ${targetMax}kg</span>
+      </div>
+      <div class="inol-bar-bg" style="height:10px"><div class="inol-bar-fill" style="height:10px;width:${progress || 0}%;background:linear-gradient(90deg,var(--accent),var(--green))"></div></div>
+      <div style="font-size:12px;color:var(--text2);margin-top:6px">RPE補正推定1RM ${latestRpeRM}kg — 目標まであと ${Math.max(0, targetMax - latestRpeRM)}kg</div>
+    </div>`;
+  }
+
+  // ===== 負荷管理カード（ACWR + モノトニー/ストレイン） =====
+  const acwr = calcACWR();
+  const fm = fosterMetrics();
+  if (acwr || fm) {
+    let acwrHtml = '';
+    if (acwr) {
+      if (acwr.established && acwr.ratio != null) {
+        const r = acwr.ratio;
+        const col = r > 1.5 ? 'var(--red)' : r > 1.3 ? 'var(--yellow)' : r >= 0.8 ? 'var(--green)' : '#60a5fa';
+        const mark = r > 1.5 ? '✕' : r > 1.3 ? '△' : r >= 0.8 ? '◎' : '△';
+        const lbl = r > 1.5 ? '危険（負荷急増）' : r > 1.3 ? '注意' : r >= 0.8 ? '最適' : '負荷不足気味';
+        const barPct = Math.min(100, r / 2 * 100);
+        acwrHtml = `
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <span style="font-size:13px">ACWR（急性:慢性負荷比）</span>
+            <span style="font-weight:800;color:${col}">${r.toFixed(2)} <span style="font-size:12px">${mark} ${lbl}</span></span>
+          </div>
+          <div style="position:relative;background:linear-gradient(90deg,#60a5fa 0 40%,var(--green) 40% 65%,var(--yellow) 65% 75%,var(--red) 75% 100%);border-radius:4px;height:8px">
+            <div style="position:absolute;left:${barPct}%;top:-3px;width:3px;height:14px;background:#fff;border-radius:2px"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-top:3px">
+            <span>0</span><span>0.8</span><span>1.3</span><span>1.5</span><span>2.0+</span>
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-top:6px">直近7日の負荷 ${(acwr.acute/1000).toFixed(1)}t ÷ 過去28日の週平均 ${(acwr.chronicWeekly/1000).toFixed(1)}t。0.8〜1.3が怪我リスクの低い安全域（Gabbett）。</div>`;
+      } else {
+        acwrHtml = `<div style="font-size:13px;color:var(--text2)">ACWR（急性:慢性負荷比）: 算出中 — 3週間以上の記録が貯まると表示されます。</div>`;
+      }
+    }
+    let fmHtml = '';
+    if (fm) {
+      const mcol = fm.monotony > 2.0 ? 'var(--red)' : fm.monotony > 1.5 ? 'var(--yellow)' : 'var(--green)';
+      const mmark = fm.monotony > 2.0 ? '✕' : fm.monotony > 1.5 ? '△' : '◎';
+      const mlbl = fm.monotony > 2.0 ? '単調すぎ' : fm.monotony > 1.5 ? 'やや単調' : '良好（メリハリあり）';
+      fmHtml = `<div class="divider"></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px">
+          <span>モノトニー（負荷の単調さ）</span><span style="font-weight:800;color:${mcol}">${fm.monotony.toFixed(2)} <span style="font-size:12px">${mmark} ${mlbl}</span></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px">
+          <span>週間ストレイン</span><span style="font-weight:700">${Math.round(fm.strain)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:6px">モノトニーが2.0を超えると毎日同じ負荷が続いている状態で、オーバートレーニングのリスクが上がります（Foster）。高負荷日と軽い日のメリハリが有効です。</div>`;
+    }
+    html += `<div class="card"><div class="card-title">🛡️ 負荷管理（怪我・疲労リスク）</div>${acwrHtml}${fmHtml}</div>`;
+  }
+
+  // ===== 目標達成予測カード（線形回帰） =====
+  const fc = regressionForecast();
+  if (fc && targetMax) {
+    const pace = fc.perWeek;
+    const paceCol = pace > 0 ? 'var(--green)' : 'var(--red)';
+    let fcBody = `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+      <span>現在の伸びペース</span><span style="font-weight:800;color:${paceCol}">${pace >= 0 ? '+' : ''}${pace.toFixed(1)}kg/週</span>
+    </div>`;
+    if (fc.reachDate && pace > 0) {
+      const fmtD = d => `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+      fcBody += `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+        <span>目標 ${targetMax}kg 到達予測</span><span style="font-weight:700;color:var(--accent2)">${fmtD(fc.reachDate)}</span>
+      </div>`;
+      if (fc.planEnd) {
+        fcBody += `<div style="display:flex;justify-content:space-between;font-size:13px">
+          <span>プログラム終了予定</span><span style="font-weight:700">${fmtD(fc.planEnd)}</span>
+        </div>`;
+        if (fc.diffWeeks != null && Math.abs(fc.diffWeeks) >= 1) {
+          const early = fc.diffWeeks < 0;
+          fcBody += `<div style="background:var(--bg3);border-radius:10px;padding:10px 12px;margin-top:10px;font-size:13px;line-height:1.6">
+            ${early ? '📈' : '📉'} 予定より約 <strong>${Math.round(Math.abs(fc.diffWeeks))}週 ${early ? '早い' : '遅い'}</strong> ペースです。${early ? 'メニューの短縮を検討できます。' : '期間延長や負荷調整を検討しましょう。'}</div>`;
+        } else {
+          fcBody += `<div style="font-size:12px;color:var(--text2);margin-top:8px">ほぼ計画どおりのペースです。</div>`;
+        }
+      }
+    } else {
+      fcBody += `<div style="background:var(--bg3);border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.6">📉 現状のペースでは目標到達が困難な見込みです。下の「メニューを見直す」から負荷と期間の再調整をおすすめします。</div>`;
+    }
+    fcBody += `<div style="font-size:11px;color:var(--text2);margin-top:8px">直近${Math.min(8, records.length)}回のRPE補正推定1RMに線形回帰をかけた予測です。</div>`;
+    html += `<div class="card"><div class="card-title">📈 目標達成予測</div>${fcBody}</div>`;
+  }
+
+  // 1RM estimate chart
+  html += `<div class="card">
+    <div class="card-title">推定1RM推移 (kg)</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">実線=RPE補正（実力の推定）／点線=記録ベース${targetMax ? ` ／ 目標 ${targetMax}kg` : ''}</div>
+    <div class="chart-wrap"><canvas id="chart-rm"></canvas></div>
+  </div>`;
+
+  // Volume chart
+  html += `<div class="card">
+    <div class="card-title">セッション総ボリューム (kg)</div>
+    <div class="chart-wrap"><canvas id="chart-vol"></canvas></div>
+  </div>`;
+
+  // INOL chart
+  html += `<div class="card">
+    <div class="card-title">INOL 推移</div>
+    <div class="chart-wrap"><canvas id="chart-inol"></canvas></div>
+    <div style="display:flex;gap:12px;margin-top:8px;font-size:12px">
+      <span style="color:var(--green)">■ 最適 (0.8-2.0)</span>
+      <span style="color:var(--yellow)">■ 高負荷 (2.0-3.0)</span>
+    </div>
+  </div>`;
+
+  // Max weight achieved
+  html += `<div class="card">
+    <div class="card-title">実施最大重量 (kg)</div>
+    <div class="chart-wrap"><canvas id="chart-maxw"></canvas></div>
+  </div>`;
+
+  // Bodyweight chart（体重記録が2件以上あるとき）
+  if (state.bodyweights.length >= 2) {
+    html += `<div class="card">
+      <div class="card-title">体重推移 (kg)</div>
+      <div class="chart-wrap"><canvas id="chart-bw"></canvas></div>
+    </div>`;
+  }
+
+  // Body fat chart（体脂肪率の記録が2件以上あるとき）
+  const fatEntries = state.bodyweights.filter(b => b.fat != null);
+  if (fatEntries.length >= 2) {
+    html += `<div class="card">
+      <div class="card-title">体脂肪率推移 (%)</div>
+      <div class="chart-wrap"><canvas id="chart-fat"></canvas></div>
+    </div>`;
+  }
+
+  // 相対筋力チャート（体重比とIPF GLポイント）
+  const rel = relStrengthSeries();
+  if (rel.labels.length >= 2) {
+    const curRatio = rel.ratio[rel.ratio.length - 1];
+    const curGL = rel.gl[rel.gl.length - 1];
+    const relDelta = curRatio - rel.ratio[0];
+    const relCol = relDelta > 0.02 ? 'var(--green)' : relDelta < -0.02 ? 'var(--red)' : 'var(--text2)';
+    const relMark = relDelta > 0.02 ? '📈 上昇中＝良好' : relDelta < -0.02 ? '📉 低下＝要注意（回復不足や過度な減量の可能性）' : '➡️ 横ばい';
+    html += `<div class="card">
+      <div class="card-title">相対筋力の推移</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">現在: 体重比 <strong style="color:var(--accent2)">${curRatio.toFixed(2)}倍</strong>${curGL != null ? ` ／ IPF GL <strong style="color:#a78bfa">${curGL.toFixed(1)}pt</strong>` : ''}</div>
+      <div class="chart-wrap"><canvas id="chart-rel"></canvas></div>
+      <div style="font-size:13px;font-weight:700;color:${relCol};margin-top:8px">${relMark}</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:6px">体重比＝体重が変わっても「本当の実力」を追える指標。減量中でも伸びていれば筋力は向上中。IPF GLポイントは体重を考慮した実力の総合点で、高いほど強い（大会の順位付けにも使われる公式指標）。</div>
+    </div>`;
+  }
+
+  // Weekly average RPE chart
+  const wrpe = weeklyRpeSeries();
+  if (wrpe.data.length >= 2) {
+    html += `<div class="card">
+      <div class="card-title">週ごとの平均RPE推移</div>
+      <div class="chart-wrap"><canvas id="chart-wrpe"></canvas></div>
+      <div style="font-size:12px;color:var(--text2);margin-top:6px">右肩上がりは疲労蓄積のサイン。ディロードや期間延長の目安になります。</div>
+    </div>`;
+  }
+
+
+  document.getElementById('analysis-content').innerHTML = html;
+
+  // Render charts
+  const baseDataset = (data, color) => ({
+    data, borderColor: color, backgroundColor: color + '33',
+    fill: true, tension: 0.4, pointBackgroundColor: color,
+    pointRadius: 4, pointHoverRadius: 6, borderWidth: 2,
+  });
+
+  // RM chart with target line
+  const rmDatasets = [
+    { ...baseDataset(rpeRMs, '#3b82f6'), label: 'RPE補正' },
+    { ...baseDataset(estRMs, '#64748b'), label: '記録ベース',
+      fill: false, backgroundColor: 'transparent', borderDash: [4,3], borderWidth: 1.5, pointRadius: 2 },
+  ];
+  if (targetMax) {
+    rmDatasets.push({
+      data: Array(labels.length).fill(targetMax),
+      borderColor: '#f59e0b', borderDash: [6,4], borderWidth: 1.5,
+      pointRadius: 0, backgroundColor: 'transparent', tension: 0,
+      label: '目標'
+    });
+  }
+
+  charts.rm = new Chart(document.getElementById('chart-rm'), {
+    type: 'line',
+    data: { labels, datasets: rmDatasets },
+    options: { ...chartDefaults, plugins: { legend: { display: true, labels: { color: '#94a3b8', font: { size: 11 } } } } }
+  });
+
+  charts.vol = new Chart(document.getElementById('chart-vol'), {
+    type: 'bar',
+    data: { labels, datasets: [{ ...baseDataset(volumes, '#22c55e'), backgroundColor: '#22c55e33', borderRadius: 6 }] },
+    options: chartDefaults
+  });
+
+  // INOL with colored background zones
+  charts.inol = new Chart(document.getElementById('chart-inol'), {
+    type: 'line',
+    data: { labels, datasets: [baseDataset(inols, '#f59e0b')] },
+    options: {
+      ...chartDefaults,
+      plugins: {
+        ...chartDefaults.plugins,
+        annotation: undefined
+      }
+    }
+  });
+
+  charts.maxw = new Chart(document.getElementById('chart-maxw'), {
+    type: 'line',
+    data: { labels, datasets: [baseDataset(maxWeights, '#a78bfa')] },
+    options: chartDefaults
+  });
+
+  // 体重推移チャート
+  if (state.bodyweights.length >= 2) {
+    const bwLabels = state.bodyweights.map(b => fmtDate(b.date));
+    const bwData = state.bodyweights.map(b => b.weight);
+    charts.bw = new Chart(document.getElementById('chart-bw'), {
+      type: 'line',
+      data: { labels: bwLabels, datasets: [baseDataset(bwData, '#f472b6')] },
+      options: chartDefaults
+    });
+  }
+
+  // 体脂肪率チャート
+  if (fatEntries.length >= 2) {
+    charts.fat = new Chart(document.getElementById('chart-fat'), {
+      type: 'line',
+      data: { labels: fatEntries.map(b => fmtDate(b.date)), datasets: [baseDataset(fatEntries.map(b => b.fat), '#fbbf24')] },
+      options: chartDefaults
+    });
+  }
+
+  // 相対筋力チャート（体重比＝左軸、IPF GL＝右軸の2軸）
+  if (rel.labels.length >= 2) {
+    const relDatasets = [{ ...baseDataset(rel.ratio, '#22d3ee'), label: '体重比 (倍)', yAxisID: 'y' }];
+    if (rel.gl.some(g => g != null)) {
+      relDatasets.push({ ...baseDataset(rel.gl, '#a78bfa'), label: 'IPF GL (pt)', yAxisID: 'y2',
+        fill: false, backgroundColor: 'transparent', borderDash: [4,3], borderWidth: 1.5, pointRadius: 2 });
+    }
+    charts.rel = new Chart(document.getElementById('chart-rel'), {
+      type: 'line',
+      data: { labels: rel.labels, datasets: relDatasets },
+      options: {
+        ...chartDefaults,
+        plugins: { legend: { display: true, labels: { color: '#94a3b8', font: { size: 11 } } } },
+        scales: {
+          ...chartDefaults.scales,
+          y2: { position: 'right', ticks: { color: '#a78bfa', font: { size: 11 } }, grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  // 週平均RPEチャート
+  if (wrpe.data.length >= 2) {
+    charts.wrpe = new Chart(document.getElementById('chart-wrpe'), {
+      type: 'line',
+      data: { labels: wrpe.labels, datasets: [baseDataset(wrpe.data, '#f59e0b')] },
+      options: chartDefaults
+    });
+  }
+
+}
+
+// ===== THEORY =====
+function renderTheory() {
+  const p = state.profile;
+  const rm = p ? p.currentMax : null;
+  const target = p ? p.targetMax : null;
+  const weeks = p ? p.totalWeeks : null;
+  const gain = (rm && target && weeks) ? ((target - rm) / weeks).toFixed(1) : null;
+
+  // 現在のプログラム状態から今週のフェーズを取得
+  let currentPhase = null;
+  let currentWeekRM = null;
+  if (state.program) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const todaySess = state.program.sessions.find(s => {
+      const d = new Date(s.date);
+      const diff = Math.abs(d - today);
+      return diff < 7 * 24 * 60 * 60 * 1000;
+    });
+    if (todaySess) { currentPhase = todaySess.phaseName; currentWeekRM = todaySess.rm1; }
+  }
+  const phaseLabels = { accumulation:'蓄積フェーズ', intensification:'強化フェーズ', peaking:'ピーキング', deload:'ディロード', MAX_TEST:'MAXテスト' };
+
+  const rackupW = currentWeekRM ? pctWeight(currentWeekRM, 107) + 'kg' : '107% 1RM';
+
+  let html = '<div class="card"><div class="card-title">採用トレーニング理論</div>';
+
+  if (p) {
+    html += `<div style="background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:16px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">現在のプログラム状態</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><div style="font-size:11px;color:var(--text2)">現在1RM</div><div style="font-weight:700">${rm}kg</div></div>
+        <div><div style="font-size:11px;color:var(--text2)">目標1RM</div><div style="font-weight:700;color:var(--accent2)">${target}kg</div></div>
+        <div><div style="font-size:11px;color:var(--text2)">週間増加目標</div><div style="font-weight:700">+${gain}kg/週</div></div>
+        <div><div style="font-size:11px;color:var(--text2)">今週のフェーズ</div><div style="font-weight:700;color:var(--yellow)">${currentPhase ? phaseLabels[currentPhase] : '—'}</div></div>
+      </div>
+    </div>`;
+  }
+
+  html += `
+    <div class="theory-section">
+      <h3>📊 INOL（強度別回数負荷）管理</h3>
+      <p>INOL = 総レップ数 ÷ (100 - 強度%) で算出。本プログラムは<strong>週あたりの合計INOLを2.0〜2.8</strong>に保つよう蓄積・強化期のセット数を自動調整。過度な疲労を避けつつ、成長に十分な負荷量を確保する。ピーキング/テーパー期は意図的に低負荷にする。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>🛡️ ACWR（急性:慢性負荷比）</h3>
+      <p>直近7日の負荷を過去28日の週平均で割った比率。<strong>0.8〜1.3が怪我リスクの低い「スイートスポット」</strong>で、1.5を超える急激な負荷増は受傷リスクが大きく上がる（Gabbett, 2016）。分析画面のゲージとコンディション判定に反映している。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>📉 モノトニー＆ストレイン（Foster法）</h3>
+      <p>セッションRPE×量から日次負荷を出し、週の平均÷標準偏差を<strong>モノトニー（単調さ）</strong>とする。2.0超＝毎日似た負荷が続く状態で、同じ週間量でもオーバートレーニング・体調不良が増える（Foster, 1998）。週合計負荷×モノトニー＝ストレインで総合的な負担を監視する。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>⚖️ 相対筋力・IPF GLポイント</h3>
+      <p>推定1RM÷体重の<strong>体重比</strong>と、IPF（国際パワーリフティング連盟）公式のGoodlift（GL）ポイントで、体重変化の影響を除いた「本当の実力」を追跡。減量中に挙上重量が横ばいでも、体重比が伸びていれば筋力は向上している。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>📈 線形回帰による目標達成予測</h3>
+      <p>直近のRPE補正推定1RMの推移に最小二乗法で回帰直線を引き、<strong>伸びペース（kg/週）と目標到達予測日</strong>を算出。プログラム終了予定とのズレが大きければ、期間の延長・短縮をコンディション分析の提案に反映する。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>📋 主観的コンディション（ウェルネスチェック）</h3>
+      <p>ACWRやモノトニーのような客観的な負荷指標だけでなく、<strong>本人の自己申告（体調）</strong>を組み合わせることで判定精度が上がるという考え方（Hooper Indexなどのウェルネス質問票の応用）。数値上は問題なくても本人が「不調」と感じていれば、それも重要なシグナルとして扱う。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>📅 ウェーブ・ペリオダイゼーション</h3>
+      <p>週3回の頻度で「蓄積 → 強化 → ピーキング → ディロード」の4フェーズを繰り返す。<strong>土曜日をメインセッション（最大強度）</strong>に設定し、月曜は高ボリューム、水曜は技術練習に特化。${weeks ? `本プログラムは${weeks}週間構成。` : ''}</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>⚡ 高重量・低レップによる神経系強化</h3>
+      <p>本プログラムは<strong>高重量×低レップ（1〜3回）</strong>を中心に構成。85〜90%超の高強度シングル/ダブルは、運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。レップを抑えることで1セットあたりの疲労を最小化し、フォームの質を保ったまま高強度の反復回数を稼ぐ（量はセット数で確保）。テクニック日のポーズ＋爆発的挙上はRFD（力の立ち上がり速度）を改善する。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>🏋️ プログレッシブオーバーロード（漸進性過負荷）</h3>
+      <p>${gain ? `本プログラムでは週平均+${gain}kgの重量増加を計画。` : '毎週1〜2.5kg単位で重量を増加。'}重量増加が困難な週はレップ数やセット数を増やしてボリュームを確保。SRA（Stimulus-Recovery-Adaptation）サイクルに基づき、次のセッションまでに超回復が完了する設計。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>⚡ ラックアップ練習（重量慣れ）</h3>
+      <p>土曜メインセッション前に<strong>${rackupW} × 3回・3秒保持</strong>を実施。神経系の適応を促進し、重量に対する心理的バリアを低下させる。ボードプレスとの組み合わせも効果的。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>🏆 ピーキング理論（パワーリフティング競技手法）</h3>
+      <p>競技選手が試合に向けてMAXを最大化する「テーパー（先細り）」の科学。Pritchard et al. (2018) のレビューに基づき本アプリが採用する方法：</p>
+      <ul>
+        <li><strong>量を50〜60%削減・強度は維持/微増：</strong>疲労だけを抜き、筋力・神経出力は残す。これが最も効果が実証された原則。</li>
+        <li><strong>ベンチは量を抜きすぎない：</strong>上半身は下半身よりボリューム削減への感受性が高く、削減30〜50%が最適（&gt;50〜70%削減より好成績）。本プログラムのピーキング日は量を中程度に抑える設計。</li>
+        <li><strong>テーパー期間は7〜10日が主流：</strong>北米選手364名の調査で最頻値。量−41〜50%のステップ・テーパー。</li>
+        <li><strong>実現（realization）ブロック：</strong>高強度シングル（88→91→94%）に漸増し、試技重量への神経適応とフォーム自動化を図る。</li>
+      </ul>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>🎙️ 競技フォーム＆コマンド練習</h3>
+      <p>本番は「胸で静止 → スタート → プレス → ラック」のコマンドに従う必要があり、止めの分だけ挙上が難しくなる。ピーキング期は<strong>全セットでポーズ＋コマンドを再現</strong>し、本番条件に習熟する。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>🥇 試技（アテンプト）選択戦略</h3>
+      <p>MAXテスト日・試合日は競技の標準係数で3本勝負を組む：</p>
+      <ul>
+        <li><strong>第1試技 = 90%：</strong>「最悪の調子でも確実に挙がる」重量。1本目を取って自信とリズムを作る。</li>
+        <li><strong>第2試技 = 97%：</strong>第1試技のバー速度を見て微調整。挑戦だが現実的。</li>
+        <li><strong>第3試技 = 102.5%：</strong>自己ベース更新の本命。第2試技の速度で判断。</li>
+      </ul>
+      <p style="margin-top:8px">係数はベンチプレスの標準（0.90 / 0.97 / 1.025）。スクワット・デッドリフトより第3試技を控えめにするのがベンチの定石。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>📈 MAXテスト計画（試合シミュレーション）</h3>
+      <p>${weeks ? `プログラム${Math.floor(weeks/2)}週目と${weeks}週目` : '6〜8週ごと'}にMAXテスト日を設定。直前のピーキング期で量を削り疲労を抜いてから、試技係数に沿って3本でMAX更新を狙う。コンディション不良なら無理せず延期。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>📚 参考エビデンス</h3>
+      <ul>
+        <li>Prilepin's Table（1974）- 強度と最適レップ数の関係</li>
+        <li>Zourdos et al. (2016) - Weekly Volume &amp; Frequency</li>
+        <li>Schoenfeld (2017) - Hypertrophy &amp; Strength Mechanisms</li>
+        <li>Helms et al. (2018) - RPE-based Autoregulation</li>
+        <li>Israetel et al. (2019) - Scientific Principles of Strength Training</li>
+        <li><strong>Pritchard et al. (2018)</strong> - Tapering &amp; Peaking Maximal Strength for Powerlifting（Sports誌レビュー）</li>
+        <li><strong>Travis et al. (2020)</strong> - Step vs. Exponential Taper in Strength Athletes</li>
+      </ul>
+    </div>
+  </div>`;
+
+  document.getElementById('theory-content').innerHTML = html;
+}
+
+// ===== NAV =====
+let activeTab = 'setup';
+function switchTab(tab) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+
+  if (tab === 'setup') {
+    document.getElementById('screen-setup').classList.add('active');
+    document.getElementById('headerTitle').textContent = 'BenchPress Pro';
+    document.getElementById('headerSub').textContent = '初期設定';
+    // Initialize date
+    if (!document.getElementById('s-start-date').value) {
+      const today = new Date();
+      document.getElementById('s-start-date').value = today.toISOString().split('T')[0];
+    }
+    return;
+  }
+
+  // Check if program exists for non-setup tabs
+  if (!state.program && tab !== 'theory') {
+    switchTab('setup'); return;
+  }
+
+  document.getElementById(`screen-${tab}`).classList.add('active');
+  document.getElementById(`nav-${tab}`)?.classList.add('active');
+  activeTab = tab;
+
+  const titles = { program:'プログラム', training:'トレーニング', records:'記録管理', analysis:'データ分析', theory:'トレーニング理論' };
+  document.getElementById('headerTitle').textContent = titles[tab] || '';
+  document.getElementById('headerSub').textContent = state.profile ? `${state.profile.currentMax}kg → ${state.profile.targetMax}kg` : '';
+
+  if (tab === 'program') renderProgram();
+  if (tab === 'records') renderRecords();
+  if (tab === 'analysis') renderAnalysis();
+  if (tab === 'theory') renderTheory();
+  if (tab === 'training' && state.currentSession) renderTraining(state.currentSession);
+}
+
+// ===== INIT =====
+function init() {
+  // Register SW
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+
+  if (state.program) {
+    switchTab('program');
+  } else {
+    switchTab('setup');
+    const today = new Date();
+    document.getElementById('s-start-date').value = today.toISOString().split('T')[0];
+    // Pre-fill if profile exists
+    if (state.profile) {
+      const p = state.profile;
+      document.getElementById('s-age').value = p.age;
+      document.getElementById('s-weight').value = p.weight;
+      document.getElementById('s-height').value = p.height;
+      document.getElementById('s-gender').value = p.gender;
+      document.getElementById('s-current-max').value = p.currentMax;
+      document.getElementById('s-target-max').value = p.targetMax;
+      updateWeeksProposal();
+    }
+  }
+
+  // 推奨週数のライブ更新（現状・目標を変えるたびに再計算）
+  ['s-current-max', 's-target-max'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', updateWeeksProposal);
+    if (el) el.addEventListener('change', updateWeeksProposal);
+  });
+}
+
+// Reset program
+function resetProgram() {
+  if (!confirm('プログラムをリセットして再設定しますか？')) return;
+  state.program = null;
+  state.currentSession = null;
+  state.completedSessions = {};
+  save();
+  switchTab('setup');
+}
+
+// Close modals on overlay click
+document.getElementById('workoutModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+document.getElementById('logModal').addEventListener('click', function(e) {
+  if (e.target === this) closeLogModal();
+});
+function closeModal() { document.getElementById('workoutModal').classList.remove('open'); }
+
+init();
+</script>
+</body>
+</html>
