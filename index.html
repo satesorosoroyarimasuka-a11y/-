@@ -611,6 +611,14 @@ function confidenceLabel(c, isMaxDay) {
   return { label: '参考(低)', badge: '📉', color: 'var(--text2)' };
 }
 
+// 信頼度/MAXテスト日に応じた散布点の色・サイズ（RM推移・相対筋力チャートで共通利用）
+function confPointColor(isMaxDay, conf) {
+  return isMaxDay || conf >= CONF_HIGH_THRESHOLD ? '#3b82f6' : conf >= 0.45 ? '#93c5fd' : '#cbd5e1';
+}
+function confPointRadius(isMaxDay, conf) {
+  return isMaxDay ? 6 : conf >= CONF_HIGH_THRESHOLD ? 5 : conf >= 0.45 ? 4 : 3;
+}
+
 // 同種目の1つ前の記録を返す（beforeDateより前の最新）
 function lastRecordOfType(type, beforeDate) {
   const past = state.records
@@ -737,7 +745,10 @@ const GAIN_STEP_MAX = 2.5;    // 最大ステップ
 // 中級者(体重比1.0〜1.35)は月2.5〜5kg＝週0.6〜1.25kgが上限（初心者はより速い線形進行が可能）。
 // 45歳以上は回復力低下を考慮して2割引き（マスターズの周期化ガイドライン）。
 function planRatePerWeek(profile) {
-  const ratio = profile && profile.weight ? profile.currentMax / profile.weight : 1.2;
+  // 実力レベルの判定はtrainingMax(MAXテストで検証済みの現在値)優先。
+  // currentMax固定のままだと、MAXテストで伸びてもレベル判定が古いまま据え置かれてしまう。
+  const nowMax = profile ? (profile.trainingMax ?? profile.currentMax) : null;
+  const ratio = profile && profile.weight ? nowMax / profile.weight : 1.2;
   let rate;
   if (ratio < 1.0) rate = 1.875;        // 初心者相当
   else if (ratio < 1.35) rate = 1.0;    // 中級者
@@ -982,8 +993,12 @@ function balanceWeeklyINOL(sessions) {
 // 完成したプログラム全体を見て、長すぎ・短すぎを判定する。
 function validateAndOptimize() {
   const p = state.profile;
+  // 「現在の実力」はtrainingMax優先（MAXテストで更新される検証済みの値）。
+  // currentMaxはセットアップ時の固定値のままなので、これだけを見ているとMAXテストで
+  // 実力が伸びても診断レポートが古い数値のまま表示され続けてしまう。
+  const nowMax = p.trainingMax ?? p.currentMax;
   const blockTgt = p.blockTarget || p.targetMax; // このブロックで実際に目指す重量
-  const diff = blockTgt - p.currentMax;
+  const diff = blockTgt - nowMax;
   const neededPerWeek = diff / p.totalWeeks;
   const months = (p.totalWeeks / 4.345).toFixed(1);
   const rate = planRatePerWeek(p); // 実力レベル・年齢に応じたエビデンス上の週あたり伸び
@@ -991,7 +1006,7 @@ function validateAndOptimize() {
   const report = { status: 'ok', warnings: [], infos: [], regenerated: false };
 
   // 目標が現在より低い
-  if (p.targetMax - p.currentMax <= 0) {
+  if (p.targetMax - nowMax <= 0) {
     report.status = 'warn';
     report.warnings.push('目標1RMが現在の1RM以下です。目標を引き上げてください。');
     state.program.report = report;
@@ -1000,9 +1015,9 @@ function validateAndOptimize() {
   }
 
   if (p.blockTarget) {
-    report.infos.push(`最終目標${p.targetMax}kgは実力レベル(体重比${(p.currentMax / p.weight).toFixed(2)}倍)${p.age >= 45 ? 'と年齢' : ''}を踏まえると1ブロックでは到達困難なため、多段計画にしています。第1ブロック: ${p.currentMax}kg → ${blockTgt}kg（${p.totalWeeks}週間）。MAXテスト後、実績をもとに次ブロックを再生成してください。`);
+    report.infos.push(`最終目標${p.targetMax}kgは実力レベル(体重比${(nowMax / p.weight).toFixed(2)}倍)${p.age >= 45 ? 'と年齢' : ''}を踏まえると1ブロックでは到達困難なため、多段計画にしています。第1ブロック: ${nowMax}kg → ${blockTgt}kg（${p.totalWeeks}週間）。MAXテスト後、実績をもとに次ブロックを再生成してください。`);
   } else {
-    report.infos.push(`現状${p.currentMax}kg → 目標${p.targetMax}kg（+${diff}kg）を${p.totalWeeks}週間（約${months}ヶ月）で達成する計画です。`);
+    report.infos.push(`現状${nowMax}kg → 目標${p.targetMax}kg（+${diff}kg）を${p.totalWeeks}週間（約${months}ヶ月）で達成する計画です。`);
   }
 
   // プログラム全体の長さ評価：エビデンス上の伸びペース(実力・年齢考慮)と比較
@@ -1174,7 +1189,7 @@ function renderProgram() {
           <div class="ring-pct" id="ringPct">0%</div>
         </div>
         <div style="flex:1">
-          <div style="font-size:18px;font-weight:800">${p.currentMax}kg → ${p.targetMax}kg</div>
+          <div style="font-size:18px;font-weight:800">${p.trainingMax ?? p.currentMax}kg → ${p.targetMax}kg</div>
           <div style="font-size:13px;color:var(--text2)">${p.totalWeeks}週間プログラム</div>
           <div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <span class="badge badge-blue">段階的+1.25〜2.5kg</span>
@@ -1822,19 +1837,25 @@ function ipfGL(e1rm, bw) {
 }
 
 // 相対筋力の推移（体重比とIPF GLポイント）
+// 各点の信頼度(e1rmConfidence)とMAXテスト日フラグも一緒に返す。
+// 折れ線自体は記録ベースの推移として残すが、点の見た目(色・サイズ)や
+// 「現在」の要約値の算出には呼び出し側で信頼度を使う（生値をそのまま実力として扱わない）。
 function relStrengthSeries() {
-  const labels = [], ratio = [], gl = [];
+  const labels = [], ratio = [], gl = [], confs = [], isMax = [];
   state.records.forEach(r => {
     if (!r.sets || !r.sets.length) return;
-    const e = recordE1RM(r);
     const bw = bwAt(r.date);
     if (!bw) return;
+    const sess = sessionForRecord(r);
+    const e = recordE1RM(r);
     labels.push(fmtDate(r.date));
     ratio.push(+(e / bw).toFixed(2));
     const g = ipfGL(e, bw);
     gl.push(g != null ? +g.toFixed(1) : null);
+    confs.push(e1rmConfidence(r, sess));
+    isMax.push(!!sess?.isMaxDay);
   });
-  return { labels, ratio, gl };
+  return { labels, ratio, gl, confs, isMax };
 }
 
 // 推定1RMの推移に線形回帰をかけ、伸びペースと目標到達予測日を返す
@@ -2003,14 +2024,22 @@ function analyzeCondition() {
     }
   }
 
-  // 相対筋力 — 減量中でも体重比が伸びていればポジティブに評価
+  // 相対筋力 — 減量中でも体重比が伸びていればポジティブに評価。
+  // 「開始時(currentMax)」と「現在(trainingMax優先)」という検証済みの数値同士を比較し、
+  // ボリューム/テクニック日の推定値のブレでスコアが左右されないようにする
+  // （relStrengthSeries()の生値そのままの比較はしない）。
   let relReason = null;
-  const rel = relStrengthSeries();
-  if (rel.ratio.length >= 2) {
-    const relDelta = rel.ratio[rel.ratio.length - 1] - rel.ratio[0];
-    if (bwReason && bwReason.includes('減') && relDelta >= 0.02) {
-      score += 3;
-      relReason = `体重比は ${rel.ratio[rel.ratio.length - 1].toFixed(2)}倍 に向上中（減量しながら相対筋力アップ）`;
+  const p = state.profile;
+  if (p && p.currentMax) {
+    const nowBw = bws.length ? bws[bws.length - 1].weight : p.weight;
+    const startBw = bwAt(p.startDate) || p.weight;
+    const nowRM = p.trainingMax ?? p.currentMax;
+    if (nowBw && startBw) {
+      const relDelta = (nowRM / nowBw) - (p.currentMax / startBw);
+      if (bwReason && bwReason.includes('減') && relDelta >= 0.02) {
+        score += 3;
+        relReason = `体重比は ${(nowRM / nowBw).toFixed(2)}倍 に向上中（減量しながら相対筋力アップ）`;
+      }
     }
   }
 
@@ -2115,12 +2144,17 @@ function renderRecords() {
   }
 
   // Summary stats（RPE補正推定1RM＝分析画面・プログラム再調整と同一基準に統一）
-  const bestEstimate = Math.max(...records.map(r => recordE1RM(r)));
+  // 「最高」は基準1RM(trainingMax、MAXテスト実測)を優先。練習日の推定値がそれを上回っても
+  // 未検証の参考値として注記し、無条件に「最高記録」扱いしない。
+  const bestFromRecords = Math.max(...records.map(r => recordE1RM(r)));
+  const tmRec = state.profile?.trainingMax ?? null;
+  const bestEstimate = tmRec != null ? Math.max(tmRec, bestFromRecords) : bestFromRecords;
+  const bestUnverified = tmRec != null && bestFromRecords > tmRec;
   const totalSets = records.reduce((a,r) => a + r.sets.length, 0);
   const totalVol = records.reduce((a,r) => a + r.sets.reduce((b,s) => b + s.weight * s.reps, 0), 0);
 
   html += `<div class="stat-grid">
-    <div class="stat-box"><div class="stat-val">${Math.round(bestEstimate)}</div><div class="stat-unit">kg</div><div class="stat-lbl">推定1RM (最高)</div></div>
+    <div class="stat-box"><div class="stat-val">${Math.round(bestEstimate)}</div><div class="stat-unit">kg</div><div class="stat-lbl">推定1RM (最高)${bestUnverified ? '<br><span style="font-size:9px">※MAXテスト未確認</span>' : ''}</div></div>
     <div class="stat-box"><div class="stat-val">${records.length}</div><div class="stat-unit">回</div><div class="stat-lbl">セッション数</div></div>
     <div class="stat-box"><div class="stat-val">${totalSets}</div><div class="stat-unit">set</div><div class="stat-lbl">総セット数</div></div>
     <div class="stat-box"><div class="stat-val">${Math.round(totalVol/1000)}t</div><div class="stat-unit"></div><div class="stat-lbl">総挙上量</div></div>
@@ -2243,7 +2277,6 @@ function renderAnalysis() {
   // ===== サマリー統計 =====
   const latestRpeRM = rpeRMs[rpeRMs.length - 1];
   const firstRpeRM = rpeRMs[0];
-  const bestRpeRM = Math.max(...rpeRMs);
   const rpeRecords = records.filter(r => r.rpe);
   const avgRpe = rpeRecords.length ? (rpeRecords.reduce((a, r) => a + r.rpe, 0) / rpeRecords.length) : null;
   const cur = profile?.currentMax || null;
@@ -2424,19 +2457,25 @@ function renderAnalysis() {
   }
 
   // 相対筋力チャート（体重比とIPF GLポイント）
+  // 「現在」はtrainingMax優先(dispRM)・「開始時」はcurrentMax(cur)という、
+  // サマリー統計と同じ検証済みの基準で比較する（練習日の記録1件のブレで
+  // 上昇/低下判定が振れないようにするため）。折れ線自体は記録ベースの推移として残す。
   const rel = relStrengthSeries();
   if (rel.labels.length >= 2) {
-    const curRatio = rel.ratio[rel.ratio.length - 1];
-    const curGL = rel.gl[rel.gl.length - 1];
-    const relDelta = curRatio - rel.ratio[0];
+    const startBw = bwAt(profile?.startDate) || profile?.weight;
+    const curRatio = (dispRM && latestBw) ? +(dispRM / latestBw).toFixed(2) : rel.ratio[rel.ratio.length - 1];
+    const curGLraw = (dispRM && latestBw) ? ipfGL(dispRM, latestBw) : null;
+    const curGL = curGLraw != null ? +curGLraw.toFixed(1) : rel.gl[rel.gl.length - 1];
+    const startRatio = (cur && startBw) ? cur / startBw : rel.ratio[0];
+    const relDelta = curRatio - startRatio;
     const relCol = relDelta > 0.02 ? 'var(--green)' : relDelta < -0.02 ? 'var(--red)' : 'var(--text2)';
     const relMark = relDelta > 0.02 ? '📈 上昇中＝良好' : relDelta < -0.02 ? '📉 低下＝要注意（回復不足や過度な減量の可能性）' : '➡️ 横ばい';
     html += `<div class="card">
       <div class="card-title">相対筋力の推移</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">現在: 体重比 <strong style="color:var(--accent2)">${curRatio.toFixed(2)}倍</strong>${curGL != null ? ` ／ IPF GL <strong style="color:#a78bfa">${curGL.toFixed(1)}pt</strong>` : ''}</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">現在: 体重比 <strong style="color:var(--accent2)">${curRatio.toFixed(2)}倍</strong>${curGL != null ? ` ／ IPF GL <strong style="color:#a78bfa">${curGL.toFixed(1)}pt</strong>` : ''}${!tm ? '<br><span style="font-size:11px">（MAXテスト未実施のため参考値）</span>' : ''}</div>
       <div class="chart-wrap"><canvas id="chart-rel"></canvas></div>
       <div style="font-size:13px;font-weight:700;color:${relCol};margin-top:8px">${relMark}</div>
-      <div style="font-size:12px;color:var(--text2);margin-top:6px">体重比＝体重が変わっても「本当の実力」を追える指標。減量中でも伸びていれば筋力は向上中。IPF GLポイントは体重を考慮した実力の総合点で、高いほど強い（大会の順位付けにも使われる公式指標）。</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:6px">体重比＝体重が変わっても「本当の実力」を追える指標。折れ線は記録ベースの推移（●濃い=MAXテスト実測／●薄い=練習日の参考値）、上の数値は基準1RMベース。IPF GLポイントは体重を考慮した実力の総合点（大会の順位付けにも使われる公式指標）。</div>
     </div>`;
   }
 
@@ -2464,8 +2503,8 @@ function renderAnalysis() {
   // 各点の色・大きさを日タイプ/信頼度で変える（MAXテスト日=濃い・大きめ、ボリューム/テクニック日=薄い・小さめ）
   const sessAll = records.map(r => sessionForRecord(r));
   const confsAll = records.map((r, i) => e1rmConfidence(r, sessAll[i]));
-  const pointColorsAll = records.map((r, i) => sessAll[i]?.isMaxDay ? '#3b82f6' : confsAll[i] >= CONF_HIGH_THRESHOLD ? '#3b82f6' : confsAll[i] >= 0.45 ? '#93c5fd' : '#cbd5e1');
-  const pointRadiiAll = records.map((r, i) => sessAll[i]?.isMaxDay ? 6 : confsAll[i] >= CONF_HIGH_THRESHOLD ? 5 : confsAll[i] >= 0.45 ? 4 : 3);
+  const pointColorsAll = records.map((r, i) => confPointColor(!!sessAll[i]?.isMaxDay, confsAll[i]));
+  const pointRadiiAll = records.map((r, i) => confPointRadius(!!sessAll[i]?.isMaxDay, confsAll[i]));
   const rmDatasets = [
     { ...baseDataset(rpeRMs, '#3b82f6'), label: 'RPE補正',
       pointBackgroundColor: pointColorsAll, pointRadius: pointRadiiAll },
@@ -2534,7 +2573,10 @@ function renderAnalysis() {
 
   // 相対筋力チャート（体重比＝左軸、IPF GL＝右軸の2軸）
   if (rel.labels.length >= 2) {
-    const relDatasets = [{ ...baseDataset(rel.ratio, '#22d3ee'), label: '体重比 (倍)', yAxisID: 'y' }];
+    const relPointColors = rel.confs.map((c, i) => confPointColor(rel.isMax[i], c));
+    const relPointRadii = rel.confs.map((c, i) => confPointRadius(rel.isMax[i], c));
+    const relDatasets = [{ ...baseDataset(rel.ratio, '#22d3ee'), label: '体重比 (倍)', yAxisID: 'y',
+      pointBackgroundColor: relPointColors, pointRadius: relPointRadii }];
     if (rel.gl.some(g => g != null)) {
       relDatasets.push({ ...baseDataset(rel.gl, '#a78bfa'), label: 'IPF GL (pt)', yAxisID: 'y2',
         fill: false, backgroundColor: 'transparent', borderDash: [4,3], borderWidth: 1.5, pointRadius: 2 });
@@ -2567,10 +2609,13 @@ function renderAnalysis() {
 // ===== THEORY =====
 function renderTheory() {
   const p = state.profile;
-  const rm = p ? p.currentMax : null;
+  const rm = p ? (p.trainingMax ?? p.currentMax) : null; // 「現在1RM」表示用（trainingMax優先）
   const target = p ? p.targetMax : null;
   const weeks = p ? p.totalWeeks : null;
-  const gain = (rm && target && weeks) ? ((target - rm) / weeks).toFixed(1) : null;
+  // 「週間増加目標」はブロック設計上の平均ペース（開始時currentMax→目標targetMaxを全期間で割った値）。
+  // ここはrm(現在値)ではなく固定の開始点(currentMax)を使う。totalWeeksは再調整で変わり得るため、
+  // 「今のプランが求める平均ペース」として常に整合する。
+  const gain = (p && target && weeks) ? ((target - p.currentMax) / weeks).toFixed(1) : null;
 
   // 現在のプログラム状態から今週のフェーズを取得
   let currentPhase = null;
@@ -2747,7 +2792,7 @@ function switchTab(tab) {
 
   const titles = { program:'プログラム', training:'トレーニング', records:'記録管理', analysis:'データ分析', theory:'トレーニング理論' };
   document.getElementById('headerTitle').textContent = titles[tab] || '';
-  document.getElementById('headerSub').textContent = state.profile ? `${state.profile.currentMax}kg → ${state.profile.targetMax}kg` : '';
+  document.getElementById('headerSub').textContent = state.profile ? `${state.profile.trainingMax ?? state.profile.currentMax}kg → ${state.profile.targetMax}kg` : '';
 
   if (tab === 'program') renderProgram();
   if (tab === 'records') renderRecords();
