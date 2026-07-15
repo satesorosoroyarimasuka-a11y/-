@@ -455,6 +455,7 @@ let state = JSON.parse(localStorage.getItem('bp-state') || 'null') || {
 };
 // 既存データに欄が無い場合の初期化（後方互換）
 if (!Array.isArray(state.bodyweights)) state.bodyweights = [];
+if (state.profile && state.profile.trainingMax == null) state.profile.trainingMax = state.profile.currentMax;
 
 function save() { localStorage.setItem('bp-state', JSON.stringify(state)); }
 
@@ -563,6 +564,51 @@ function recordE1RM(r) {
   if (!top || !top.weight || !top.reps) return 0;
   const rpe = top.rpe != null ? top.rpe : r.rpe;
   return rpeE1RM(top.weight, top.reps, rpe);
+}
+
+// 記録に対応するプログラムセッション（その日・種目の計画）を引く
+function sessionForRecord(r) {
+  return state.program?.sessions.find(s => s.date === r.date && s.type === r.type) || null;
+}
+
+// 日タイプ別のベース信頼度。MAXテスト日・メイン日ほど「実測に近い」。
+const CONF_TYPE_BASE = { maxDay: 1.0, main: 0.85, technique: 0.55, volume: 0.35, unknown: 0.6 };
+const CONF_HIGH_THRESHOLD = 0.7; // これ以上を「実測級」の参考値として扱う（基準1RM更新自体はMAXテスト日限定）
+
+// 記録の推定1RMがどれだけ信頼できるか（0〜1）を返す。
+// プログラムは日ごとに意図的に強度を使い分けている（ボリューム日は高レップ低強度、
+// メイン日は低レップ高強度など）が、recordE1RM自体はその違いを見ずに逆算するため、
+// コンディション判定やプログラム再調整で全記録を同列に扱うとボリューム/テクニック日の
+// ブレに引きずられてしまう。低レップ・高RPE・メイン/MAXテスト日ほど高信頼、
+// 高レップ・ボリューム日ほど低信頼（参考値）とする。
+// sessが見つからない場合（古いプログラムを再生成した後の過去データ等）でも
+// reps/rpeだけから妥当な中間値を返す（既存state.recordsへの遡及変更は不要）。
+function e1rmConfidence(rec, sess) {
+  if (sess === undefined) sess = sessionForRecord(rec);
+  const top = topSetOf(rec);
+  if (!top || !top.reps) return 0;
+  const rpe = top.rpe != null ? top.rpe : rec.rpe;
+
+  const typeBase = sess?.isMaxDay ? CONF_TYPE_BASE.maxDay
+    : sess?.type === 'main' ? CONF_TYPE_BASE.main
+    : sess?.type === 'technique' ? CONF_TYPE_BASE.technique
+    : sess?.type === 'volume' ? CONF_TYPE_BASE.volume
+    : CONF_TYPE_BASE.unknown;
+
+  const repFactor = top.reps <= 1 ? 1 : top.reps <= 2 ? 0.95 : top.reps <= 4 ? 0.8 : top.reps <= 6 ? 0.65 : 0.5;
+  const rpeFactor = rpe == null ? 0.6 : rpe >= 9.5 ? 1 : rpe >= 8.5 ? 0.95 : rpe >= 7.5 ? 0.8 : rpe >= 6.5 ? 0.65 : 0.55;
+
+  return Math.max(0.1, Math.min(1, typeBase * repFactor * rpeFactor));
+}
+
+// UI表示用の信頼度ラベル。「実測」を名乗るのはMAXテスト日のみ
+// （メイン日の高強度シングルも計画通りの練習であって真の限界テストではないため、
+// 紛らわしい「実測級」表記にしない）。それ以外は信頼度に応じた参考値の強弱で表示する。
+function confidenceLabel(c, isMaxDay) {
+  if (isMaxDay) return { label: '実測(MAXテスト)', badge: '🎯', color: 'var(--green)' };
+  if (c >= CONF_HIGH_THRESHOLD) return { label: '参考(高)', badge: '📐', color: 'var(--accent2)' };
+  if (c >= 0.45) return { label: '参考(中)', badge: '📊', color: 'var(--accent2)' };
+  return { label: '参考(低)', badge: '📉', color: 'var(--text2)' };
 }
 
 // 同種目の1つ前の記録を返す（beforeDateより前の最新）
@@ -807,7 +853,11 @@ function generateProgram() {
   const totalWeeks = rec.weeks;
   const blockTarget = rec.milestone; // nullなら1ブロックで目標到達、非nullなら分割ロードマップの第1ブロック目標
 
-  const profile = { age, weight, height, gender, currentMax, targetMax, blockTarget, startDate, totalWeeks };
+  // 基準1RM(trainingMax)はMAXテスト日の記録でのみ更新される値。編集モードでは保持し、
+  // 新規セットアップ時のみcurrentMax(自己申告実測値)で初期化する。
+  const prevTrainingMax = (isEditMode && state.profile) ? state.profile.trainingMax : null;
+  const profile = { age, weight, height, gender, currentMax, targetMax, blockTarget, startDate, totalWeeks,
+    trainingMax: prevTrainingMax != null ? prevTrainingMax : currentMax };
   state.profile = profile;
 
   // 編集モードでは記録・完了状態を保持
@@ -886,7 +936,8 @@ function buildProgramSessions(profile, rmForWeek) {
     const main = buildSession(satDate, 'main', weekRM, phase, w, isDeload, isMaxDay);
 
     // 週あたりINOLを目標2.0〜2.8に調整（蓄積・強化期のみ。ピーキング/テーパーは意図的に低負荷）
-    if (phase.name === 'accumulation' || phase.name === 'intensification') {
+    // MAXテスト日は3本勝負の固定構成のため対象外（自動調整で試技が重複挿入されるバグを回避）
+    if ((phase.name === 'accumulation' || phase.name === 'intensification') && !isMaxDay) {
       balanceWeeklyINOL([vol, tech, main]);
     }
 
@@ -1486,8 +1537,11 @@ function saveLog() {
 
   // Remove existing
   state.records = state.records.filter(r => r.key !== logKey);
-  state.records.push({ key: logKey, date: s.date, type: s.type, sets, rpe, fatigue, notes, restActual, timestamp: Date.now() });
+  const newRec = { key: logKey, date: s.date, type: s.type, sets, rpe, fatigue, notes, restActual, timestamp: Date.now() };
+  state.records.push(newRec);
   state.records.sort((a,b) => a.date.localeCompare(b.date));
+  // 基準1RM(trainingMax)はMAXテスト日の記録でのみ静かに更新する
+  maybeUpdateTrainingMax(newRec, s);
   save();
 
   closeLogModal();
@@ -1508,6 +1562,22 @@ function saveLog() {
   }
 }
 
+// 基準1RM(trainingMax)は「MAXテスト日」の記録でのみ更新する。
+// メイン/ピーキング日の高強度シングルも計画通りにこなす練習であり、
+// 本当の限界を試すMAXテスト日と同じ確度では扱わない。
+// プログラム期間の伸縮判断（planRecalibration）とは独立に、表示・今後の判断で使う
+// 基準値を最新の実測に保つのが目的。
+function maybeUpdateTrainingMax(rec, sess) {
+  if (!state.profile || !rec || !sess?.isMaxDay) return false;
+  const raw = round25(recordE1RM(rec));
+  if (!raw) return false;
+  const cur = state.profile.trainingMax ?? state.profile.currentMax;
+  if (Math.abs(raw - cur) < 1.25) return false;
+  state.profile.trainingMax = raw;
+  if (state.program) state.program.profile = state.profile;
+  return true;
+}
+
 // ===== 記録に基づくプログラム修正の「計算」（stateは変更しない）=====
 // 記録のトップセット（最重量セット）のRPE補正推定1RM（recordE1RM＝分析画面と同一基準）を
 // そのまま現在の実力として採用し、未実施の以降セッションを再構築した案を返す。
@@ -1524,12 +1594,16 @@ function planRecalibration(session, loggedSets) {
   // RPEが無いと余力が不明で実力を測れない（限界扱いすると誤って下方修正される）ため提案しない
   if (top.rpe == null && !rec.rpe) return { changed: false, noRpe: true };
 
-  const achievedRM = round25(recordE1RM(rec));
+  const rawAchievedRM = round25(recordE1RM(rec));
   const prevRM = session.rm1;
+  // ボリューム/テクニック日など信頼度が低い記録ほど、計画値(prevRM)からの乖離を小さく評価する。
+  // メイン/MAXテスト日は信頼度が高く、ほぼそのまま実力とみなす。
+  const confidence = e1rmConfidence(rec, session);
+  const achievedRM = round25(prevRM + confidence * (rawAchievedRM - prevRM));
   const delta = achievedRM - prevRM;
 
   // ほぼ計画通り（±2.5kg未満）なら修正不要
-  if (Math.abs(delta) < 2.5) return { changed: false, newRM: achievedRM, prevRM, delta };
+  if (Math.abs(delta) < 2.5) return { changed: false, newRM: achievedRM, prevRM, delta, confidence };
 
   // プロフィールはクローンして計算（liveなstateは変更しない）
   const p = { ...state.profile };
@@ -1584,7 +1658,7 @@ function planRecalibration(session, loggedSets) {
     }
   });
 
-  return { changed: true, newRM: achievedRM, prevRM, delta, extendedWeeks, newTotal, rebuilt, newProfile: p };
+  return { changed: true, newRM: achievedRM, prevRM, delta, confidence, extendedWeeks, newTotal, rebuilt, newProfile: p };
 }
 
 // 提案を実際に適用する
@@ -1607,6 +1681,9 @@ function confirmAndApply(plan) {
   const dir = plan.delta < 0 ? '下方修正' : '上方修正';
   let msg = '【記録の分析結果】\n';
   msg += `実績（RPE補正）から現在の推定1RMは ${plan.prevRM}kg → ${plan.newRM}kg（${dir}）と評価しました。\n\n`;
+  if (plan.confidence != null && plan.confidence < 0.45) {
+    msg += '（ボリューム/テクニック日の記録のため、計画値からの乖離は弱めに反映しています）\n\n';
+  }
   if (plan.extendedWeeks > 0) {
     msg += `📉 安全なペースを保つため、期間を ${plan.extendedWeeks}週間 延長する提案です（全${plan.newTotal}週間）。`;
   } else if (plan.extendedWeeks < 0) {
@@ -1633,6 +1710,7 @@ function proposeAdjustFromAnalysis() {
     state.program && state.program.sessions.some(s => s.date === r.date && s.type === r.type));
   if (!rec) { alert('メニュー調整には記録の入力が必要です。'); return; }
   const sess = state.program.sessions.find(s => s.date === rec.date && s.type === rec.type);
+  if (maybeUpdateTrainingMax(rec, sess)) save();
   const plan = planRecalibration(sess, rec.sets);
   if (plan && plan.noRpe) {
     alert('最新の記録にRPEが入力されていないため、実力を評価できません。記録を開いてトップセット（最重量セット）のRPEを入力してください。');
@@ -1765,15 +1843,17 @@ function regressionForecast() {
   if (recs.length < 4 || !state.profile) return null;
   const use = recs.slice(-8);
   const t0 = new Date(use[0].date);
+  // ボリューム/テクニック日のブレが伸びペースの回帰を歪めないよう、信頼度で加重した最小二乗にする
   const pts = use.map(r => ({
     x: (new Date(r.date) - t0) / 86400000,
     y: recordE1RM(r),
+    w: e1rmConfidence(r, sessionForRecord(r)),
   }));
-  const n = pts.length;
-  const mx = pts.reduce((a, p) => a + p.x, 0) / n;
-  const my = pts.reduce((a, p) => a + p.y, 0) / n;
+  const sw = pts.reduce((a, p) => a + p.w, 0) || pts.length;
+  const mx = pts.reduce((a, p) => a + p.w * p.x, 0) / sw;
+  const my = pts.reduce((a, p) => a + p.w * p.y, 0) / sw;
   let sxy = 0, sxx = 0;
-  pts.forEach(p => { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; });
+  pts.forEach(p => { sxy += p.w * (p.x - mx) * (p.y - my); sxx += p.w * (p.x - mx) ** 2; });
   if (sxx === 0) return null;
   const slope = sxy / sxx;             // kg/日
   const intercept = my - slope * mx;
@@ -1804,20 +1884,29 @@ function analyzeCondition() {
   const recent = recs.slice(-4); // 直近4回
   const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
 
-  // 各記録のRPE補正推定1RM
+  // 各記録のRPE補正推定1RMと、日タイプ/RPEに基づく信頼度
+  // （ボリューム/テクニック日のブレに調子スコアが引きずられないよう重み付けする）
   const es = recent.map(r => recordE1RM(r));
+  const sessOf = recent.map(r => sessionForRecord(r));
+  const confs = recent.map((r, i) => e1rmConfidence(r, sessOf[i]));
+  const wmean = (arr, w) => {
+    const sw = w.reduce((a, b) => a + b, 0);
+    return sw ? arr.reduce((a, v, i) => a + v * w[i], 0) / sw : mean(arr);
+  };
 
-  // 計画（その日の推定1RM）に対する実力比
-  const perfs = [];
+  // 計画（その日の推定1RM）に対する実力比（信頼度加重平均）
+  const perfPairs = [];
   recent.forEach((r, i) => {
-    const sess = state.program?.sessions.find(s => s.date === r.date && s.type === r.type);
-    if (sess && sess.rm1) perfs.push(es[i] / sess.rm1);
+    const sess = sessOf[i];
+    if (sess && sess.rm1) perfPairs.push({ v: es[i] / sess.rm1, w: confs[i] });
   });
-  const avgPerf = perfs.length ? mean(perfs) : 1;
+  const avgPerf = perfPairs.length ? wmean(perfPairs.map(p => p.v), perfPairs.map(p => p.w)) : 1;
 
-  // モメンタム（前半平均 → 後半平均の伸び）
+  // モメンタム（前半平均 → 後半平均の伸び、信頼度加重）
   const half = Math.max(1, Math.floor(es.length / 2));
-  const momentum = es.length >= 2 ? mean(es.slice(-half)) - mean(es.slice(0, half)) : 0;
+  const momentum = es.length >= 2
+    ? wmean(es.slice(-half), confs.slice(-half)) - wmean(es.slice(0, half), confs.slice(0, half))
+    : 0;
 
   // 平均RPE
   const rpeR = recent.filter(r => r.rpe);
@@ -2025,11 +2114,8 @@ function renderRecords() {
     return;
   }
 
-  // Summary stats
-  const maxEstimates = records.flatMap(r =>
-    r.sets.map(s => epley(s.weight, s.reps))
-  );
-  const bestEstimate = Math.max(...maxEstimates);
+  // Summary stats（RPE補正推定1RM＝分析画面・プログラム再調整と同一基準に統一）
+  const bestEstimate = Math.max(...records.map(r => recordE1RM(r)));
   const totalSets = records.reduce((a,r) => a + r.sets.length, 0);
   const totalVol = records.reduce((a,r) => a + r.sets.reduce((b,s) => b + s.weight * s.reps, 0), 0);
 
@@ -2044,16 +2130,20 @@ function renderRecords() {
   const typeLabels = { volume:'ボリューム', technique:'テクニック', main:'メイン', MAX_TEST:'MAXテスト' };
 
   [...records].reverse().forEach(r => {
-    const best = Math.max(...r.sets.map(s => epley(s.weight, s.reps)));
+    const sess = sessionForRecord(r);
+    const conf = e1rmConfidence(r, sess);
+    const ci = confidenceLabel(conf, sess?.isMaxDay);
+    const rpeRM = Math.round(recordE1RM(r));
     html += `<div class="record-row" onclick="openSession('${r.date}','${r.type}')">
       <div>
         <div style="font-size:14px;font-weight:600">${fmtDate(r.date)}</div>
-        <div style="font-size:12px;color:var(--text2)">${typeLabels[r.type] || r.type} · ${r.sets.length}セット</div>
+        <div style="font-size:12px;color:var(--text2)">${typeLabels[r.type] || r.type} · ${r.sets.length}セット
+          <span style="color:${ci.color}"> ${ci.badge} ${ci.label}</span></div>
         ${r.notes ? `<div style="font-size:12px;color:var(--text2);margin-top:2px">${r.notes}</div>` : ''}
       </div>
       <div style="text-align:right">
         <div style="font-size:16px;font-weight:700;color:var(--accent2)">${r.sets[0]?.weight || '-'}kg</div>
-        <div style="font-size:12px;color:var(--text2)">推定RM ${Math.round(best)}kg</div>
+        <div style="font-size:12px;color:var(--text2)">推定RM ${rpeRM}kg</div>
         ${r.rpe ? `<div style="font-size:12px;color:var(--yellow)">RPE ${r.rpe}</div>` : ''}
       </div>
     </div>`;
@@ -2158,9 +2248,14 @@ function renderAnalysis() {
   const avgRpe = rpeRecords.length ? (rpeRecords.reduce((a, r) => a + r.rpe, 0) / rpeRecords.length) : null;
   const cur = profile?.currentMax || null;
   const gain = latestRpeRM - firstRpeRM;
+  // 目標達成率は「MAXテスト日の実測」に基づく基準1RM(trainingMax)を優先する。
+  // 練習日(ボリューム/テクニック/メイン)の推定値だけで達成率が動くと、
+  // 計画通りにこなしただけの数字で一喜一憂することになるため。
+  const tm = profile?.trainingMax ?? null;
+  const dispRM = tm ?? latestRpeRM;
   let progress = null;
   if (cur && targetMax && targetMax > cur) {
-    progress = Math.max(0, Math.min(100, (latestRpeRM - cur) / (targetMax - cur) * 100));
+    progress = Math.max(0, Math.min(100, (dispRM - cur) / (targetMax - cur) * 100));
   }
 
   let html = '';
@@ -2187,6 +2282,7 @@ function renderAnalysis() {
 
   // サマリー統計カード
   html += `<div class="stat-grid">
+    <div class="stat-box"><div class="stat-val">${tm ?? '—'}</div><div class="stat-unit">${tm != null ? 'kg' : ''}</div><div class="stat-lbl">基準1RM<br>(MAXテスト実測)</div></div>
     <div class="stat-box"><div class="stat-val">${latestRpeRM}</div><div class="stat-unit">kg</div><div class="stat-lbl">現在の推定1RM<br>(RPE補正・最新)</div></div>
     <div class="stat-box"><div class="stat-val">${gain >= 0 ? '+' : ''}${gain}</div><div class="stat-unit">kg</div><div class="stat-lbl">開始からの伸び</div></div>
     <div class="stat-box"><div class="stat-val">${progress !== null ? Math.round(progress) : '—'}</div><div class="stat-unit">${progress !== null ? '%' : ''}</div><div class="stat-lbl">目標達成率</div></div>
@@ -2199,7 +2295,7 @@ function renderAnalysis() {
         <span>${cur}kg（開始）</span><span style="color:var(--accent2)">目標 ${targetMax}kg</span>
       </div>
       <div class="inol-bar-bg" style="height:10px"><div class="inol-bar-fill" style="height:10px;width:${progress || 0}%;background:linear-gradient(90deg,var(--accent),var(--green))"></div></div>
-      <div style="font-size:12px;color:var(--text2);margin-top:6px">RPE補正推定1RM ${latestRpeRM}kg — 目標まであと ${Math.max(0, targetMax - latestRpeRM)}kg</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:6px">${tm != null ? '基準1RM(MAXテスト実測)' : 'RPE補正推定1RM(参考値)'} ${dispRM}kg — 目標まであと ${Math.max(0, targetMax - dispRM)}kg</div>
     </div>`;
   }
 
@@ -2285,6 +2381,7 @@ function renderAnalysis() {
     <div class="card-title">推定1RM推移 (kg)</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:8px">実線=RPE補正（実力の推定）／点線=記録ベース${targetMax ? ` ／ 目標 ${targetMax}kg` : ''}</div>
     <div class="chart-wrap"><canvas id="chart-rm"></canvas></div>
+    <div style="font-size:11px;color:var(--text2);margin-top:6px">●濃い=MAXテスト(実測) 　●中間=メイン日 　●薄い=ボリューム/テクニック(参考値)</div>
   </div>`;
 
   // Volume chart
@@ -2364,8 +2461,14 @@ function renderAnalysis() {
   });
 
   // RM chart with target line
+  // 各点の色・大きさを日タイプ/信頼度で変える（MAXテスト日=濃い・大きめ、ボリューム/テクニック日=薄い・小さめ）
+  const sessAll = records.map(r => sessionForRecord(r));
+  const confsAll = records.map((r, i) => e1rmConfidence(r, sessAll[i]));
+  const pointColorsAll = records.map((r, i) => sessAll[i]?.isMaxDay ? '#3b82f6' : confsAll[i] >= CONF_HIGH_THRESHOLD ? '#3b82f6' : confsAll[i] >= 0.45 ? '#93c5fd' : '#cbd5e1');
+  const pointRadiiAll = records.map((r, i) => sessAll[i]?.isMaxDay ? 6 : confsAll[i] >= CONF_HIGH_THRESHOLD ? 5 : confsAll[i] >= 0.45 ? 4 : 3);
   const rmDatasets = [
-    { ...baseDataset(rpeRMs, '#3b82f6'), label: 'RPE補正' },
+    { ...baseDataset(rpeRMs, '#3b82f6'), label: 'RPE補正',
+      pointBackgroundColor: pointColorsAll, pointRadius: pointRadiiAll },
     { ...baseDataset(estRMs, '#64748b'), label: '記録ベース',
       fill: false, backgroundColor: 'transparent', borderDash: [4,3], borderWidth: 1.5, pointRadius: 2 },
   ];
