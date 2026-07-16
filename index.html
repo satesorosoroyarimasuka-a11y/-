@@ -1079,9 +1079,11 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
 
   if (type === 'volume') {
     // 高重量・低レップ志向（神経系強化）。量はINOL自動調整でセット数を確保
+    // レップレンジは1〜5。蓄積期を最大の5レップにし、強化期→ピーキングへと
+    // 強度が上がるにつれレップを減らす（周期化の一貫性を保つ）
     let pct, sets, reps;
-    if (phaseName === 'accumulation') { pct = 80; sets = 5; reps = 3; }
-    else if (phaseName === 'intensification') { pct = 85; sets = 5; reps = 2; }
+    if (phaseName === 'accumulation') { pct = 80; sets = 5; reps = 5; }
+    else if (phaseName === 'intensification') { pct = 85; sets = 5; reps = 3; }
     else if (phaseName === 'peaking') { pct = 82; sets = 3; reps = 2; }
     // ディロードは45歳以上でより深く落とす（マスターズは回復微週の強度減を10〜15%と大きめに取る）
     else { /* deload=テーパー週 */ pct = (state.profile?.age >= 45) ? 65 : 70; sets = 2; reps = 3; }
@@ -2685,7 +2687,7 @@ function renderTheory() {
     <div class="divider"></div>
     <div class="theory-section">
       <h3>⚡ 高重量・低レップによる神経系強化</h3>
-      <p>本プログラムは<strong>高重量×低レップ（1〜3回）</strong>を中心に構成。85〜90%超の高強度シングル/ダブルは、運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。レップを抑えることで1セットあたりの疲労を最小化し、フォームの質を保ったまま高強度の反復回数を稼ぐ（量はセット数で確保）。テクニック日のポーズ＋爆発的挙上はRFD（力の立ち上がり速度）を改善する。</p>
+      <p>本プログラムは<strong>高重量×低レップ（メイン/テクニック日は1〜3回、ボリューム日は1〜5回）</strong>を中心に構成。85〜90%超の高強度シングル/ダブルは、運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。レップを抑えることで1セットあたりの疲労を最小化し、フォームの質を保ったまま高強度の反復回数を稼ぐ（量はセット数で確保）。テクニック日のポーズ＋爆発的挙上はRFD（力の立ち上がり速度）を改善する。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
