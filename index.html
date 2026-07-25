@@ -2001,14 +2001,34 @@ function regressionForecast() {
   const slope = sxy / sxx;             // kg/日
   const intercept = my - slope * mx;
   const perWeek = slope * 7;
-  const target = state.profile.targetMax;
+  // 多段ロードマップ中は「このブロックの目標」を予測対象にする。
+  // プログラム終了日はブロック目標への到達に対応するため、最終目標(targetMax)と
+  // 比較すると「◯週早い/遅い」の土台がズレてしまう。
+  const isBlockTarget = !!state.profile.blockTarget;
+  const target = state.profile.blockTarget || state.profile.targetMax;
   const current = intercept + slope * ((new Date() - t0) / 86400000);
+
+  // データ期間ガード: 記録期間が3週間未満の外挿は不安定なので到達日を出さない
+  // (ACWRの「3週間以上で表示」と同じ思想)
+  const spanDays = pts[pts.length - 1].x - pts[0].x;
+  const insufficientSpan = spanDays < 21;
+
+  // 生理学的キャップ: MAXテスト成功や好調な記録で直近の点が跳ねると、
+  // 短期間の傾きが週+3〜5kg級になり「数週間で+10kg」のような持続不可能な
+  // 予測になる。到達日の計算だけは実力レベル・年齢に応じた持続可能ペース
+  // (planRatePerWeek×1.5)を上限にならす。表示ペース(perWeek)は実測のまま。
+  const rate = planRatePerWeek(state.profile);
+  const capped = perWeek > rate * 1.5;
+  const paceForReach = capped ? rate * 1.5 : perWeek;
+
   let reachDate = null;
-  if (slope > 0 && current < target) {
-    const daysTo = (target - intercept) / slope;
-    reachDate = new Date(t0.getTime() + daysTo * 86400000);
-  } else if (current >= target) {
-    reachDate = new Date();
+  if (!insufficientSpan) {
+    if (current >= target) {
+      reachDate = new Date();
+    } else if (paceForReach > 0) {
+      const daysTo = (target - current) / (paceForReach / 7);
+      reachDate = new Date(Date.now() + daysTo * 86400000);
+    }
   }
   // プログラム終了予定日
   let planEnd = null;
@@ -2016,7 +2036,7 @@ function regressionForecast() {
     planEnd = new Date(state.program.sessions[state.program.sessions.length - 1].date);
   }
   const diffWeeks = (reachDate && planEnd) ? (reachDate - planEnd) / (86400000 * 7) : null;
-  return { perWeek, current, target, reachDate, planEnd, diffWeeks };
+  return { perWeek, current, target, isBlockTarget, reachDate, planEnd, diffWeeks, insufficientSpan, capped, rate };
 }
 
 // ===== コンディション5段階評価 =====
@@ -2227,7 +2247,7 @@ function analyzeCondition() {
 
   let suggest = null;
   if (acwrSuggest) suggest = acwrSuggest; // 怪我リスクは最優先で提示
-  else if (level >= 4) suggest = 'この調子なら目標達成を前倒しできる可能性があります。メニューの短縮を検討できます。';
+  else if (level >= 4) suggest = 'この調子なら目標達成を前倒しできる可能性があります（MAXテストや記録で実測が伸びれば、短縮が自動提案されます）。';
   else if (level <= 2) suggest = '無理は禁物です。期間を延ばし、負荷を落として安全に伸ばすことを検討しましょう。';
   // 疲労が明確なら、レベルに関わらず回復優先の助言を出す
   if (wrTrend >= 0.7 && !suggest) {
@@ -2539,13 +2559,16 @@ function renderAnalysis() {
   if (fc && targetMax) {
     const pace = fc.perWeek;
     const paceCol = pace > 0 ? 'var(--green)' : 'var(--red)';
+    const targetLabel = fc.isBlockTarget ? `第1ブロック目標 ${fc.target}kg` : `目標 ${fc.target}kg`;
     let fcBody = `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
       <span>現在の伸びペース</span><span style="font-weight:800;color:${paceCol}">${pace >= 0 ? '+' : ''}${pace.toFixed(1)}kg/週</span>
     </div>`;
-    if (fc.reachDate && pace > 0) {
+    if (fc.insufficientSpan) {
+      fcBody += `<div style="background:var(--bg3);border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.6">⏳ 到達予測は記録期間が3週間以上たまると表示されます（現在蓄積中）。短い期間の伸びをそのまま先まで延長すると、実際にはあり得ないペースの予測になってしまうためです。</div>`;
+    } else if (fc.reachDate) {
       const fmtD = d => `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
       fcBody += `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-        <span>目標 ${targetMax}kg 到達予測</span><span style="font-weight:700;color:var(--accent2)">${fmtD(fc.reachDate)}</span>
+        <span>${targetLabel} 到達予測</span><span style="font-weight:700;color:var(--accent2)">${fmtD(fc.reachDate)}</span>
       </div>`;
       if (fc.planEnd) {
         fcBody += `<div style="display:flex;justify-content:space-between;font-size:13px">
@@ -2554,15 +2577,18 @@ function renderAnalysis() {
         if (fc.diffWeeks != null && Math.abs(fc.diffWeeks) >= 1) {
           const early = fc.diffWeeks < 0;
           fcBody += `<div style="background:var(--bg3);border-radius:10px;padding:10px 12px;margin-top:10px;font-size:13px;line-height:1.6">
-            ${early ? '📈' : '📉'} 予定より約 <strong>${Math.round(Math.abs(fc.diffWeeks))}週 ${early ? '早い' : '遅い'}</strong> ペースです。${early ? 'メニューの短縮を検討できます。' : '期間延長や負荷調整を検討しましょう。'}</div>`;
+            ${early ? '📈' : '📉'} 予定より約 <strong>${Math.round(Math.abs(fc.diffWeeks))}週 ${early ? '早い' : '遅い'}</strong> ペースです。${early ? 'この調子が続けば、記録の達成度に応じて短縮が自動提案されます。' : '期間延長や負荷調整を検討しましょう。'}</div>`;
         } else {
           fcBody += `<div style="font-size:12px;color:var(--text2);margin-top:8px">ほぼ計画どおりのペースです。</div>`;
         }
       }
+      if (fc.capped) {
+        fcBody += `<div style="font-size:12px;color:var(--yellow);margin-top:8px">📌 直近の伸び（週+${pace.toFixed(1)}kg）は一時的なジャンプを含むため、科学的に持続可能なペース（週+${(fc.rate * 1.5).toFixed(1)}kg）でならして到達日を計算しています。</div>`;
+      }
     } else {
       fcBody += `<div style="background:var(--bg3);border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.6">📉 現状のペースでは目標到達が困難な見込みです。下の「メニューを見直す」から負荷と期間の再調整をおすすめします。</div>`;
     }
-    fcBody += `<div style="font-size:11px;color:var(--text2);margin-top:8px">直近${Math.min(8, records.length)}回の実力推定（計画補正済み）に線形回帰をかけた予測です。</div>`;
+    fcBody += `<div style="font-size:11px;color:var(--text2);margin-top:8px">直近${Math.min(8, records.length)}回の実力推定（計画補正済み）に線形回帰をかけた予測です。※予測は参考値です。プログラムの実際の変更は、記録の達成度（計画比）とMAXテスト実測に基づいて提案されます。</div>`;
     html += `<div class="card"><div class="card-title">📈 目標達成予測</div>${fcBody}</div>`;
   }
 
