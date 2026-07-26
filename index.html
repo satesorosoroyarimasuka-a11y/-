@@ -5,23 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0f172a">
+<meta name="theme-color" content="#070b14">
 <title>BenchPress Pro</title>
 <link rel="manifest" href="manifest.json">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
+  /* ===== プレミアムダークテーマ =====
+     深いグラデーション背景・カードの立体感とグロー・洗練されたタイポグラフィ。
+     クラス名/ID/表示切替(.active/.open/.checked)はJSが参照するため変更しない。 */
   :root {
-    --bg: #0f172a;
-    --bg2: #1e293b;
-    --bg3: #334155;
+    --bg: #070b14;
+    --bg2: #131c2e;
+    --bg3: #1f2b42;
     --accent: #3b82f6;
     --accent2: #60a5fa;
     --green: #22c55e;
     --red: #ef4444;
     --yellow: #f59e0b;
-    --text: #f1f5f9;
-    --text2: #94a3b8;
-    --radius: 12px;
+    --text: #f4f7fb;
+    --text2: #8fa3bf;
+    --radius: 16px;
+    --line: rgba(148,163,184,.10);
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -34,52 +38,83 @@
     min-height: -webkit-fill-available;
     overflow-x: hidden;
   }
+  /* 奥行きのあるグラデーション背景（青のオーラを上下に薄く配置） */
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(1100px 700px at 85% -10%, rgba(59,130,246,.16), transparent 60%),
+      radial-gradient(900px 700px at -15% 110%, rgba(99,102,241,.13), transparent 55%),
+      linear-gradient(180deg, #0a1120 0%, #070b14 100%);
+  }
   #app { display: flex; flex-direction: column; min-height: 100vh; min-height: -webkit-fill-available; }
+  ::-webkit-scrollbar { display: none; }
 
-  /* ===== NAV ===== */
+  /* ===== NAV（フローティングピル型・すりガラス） ===== */
   .nav {
-    position: fixed; bottom: 0; left: 0; right: 0;
-    background: var(--bg2);
-    border-top: 1px solid var(--bg3);
-    display: flex;
-    padding-bottom: var(--safe-bottom);
+    position: fixed; left: 12px; right: 12px;
+    bottom: calc(var(--safe-bottom) + 10px);
+    background: rgba(15,23,42,.78);
+    -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    display: flex; padding: 6px;
     z-index: 100;
+    box-shadow: 0 12px 32px rgba(2,6,17,.55);
   }
   .nav-btn {
     flex: 1; display: flex; flex-direction: column; align-items: center;
-    padding: 8px 4px 6px; border: none; background: none;
-    color: var(--text2); font-size: 10px; cursor: pointer;
-    transition: color .2s;
+    padding: 8px 2px 6px; border: none; background: none; border-radius: 18px;
+    color: var(--text2); font-size: 10px; font-weight: 600; cursor: pointer;
+    white-space: nowrap;
+    transition: color .25s, background .25s, box-shadow .25s;
   }
-  .nav-btn.active { color: var(--accent2); }
+  .nav-btn.active {
+    color: #fff;
+    background: linear-gradient(135deg, rgba(59,130,246,.28), rgba(99,102,241,.18));
+    box-shadow: inset 0 0 0 1px rgba(96,165,250,.35);
+  }
+  .nav-btn.active svg { filter: drop-shadow(0 0 6px rgba(59,130,246,.6)); }
   .nav-btn svg { width: 24px; height: 24px; margin-bottom: 2px; }
 
-  /* ===== HEADER ===== */
+  /* ===== HEADER（すりガラス＋グラデーションロゴ） ===== */
   .header {
-    background: var(--bg2);
-    padding: calc(var(--safe-top) + 12px) 16px 12px;
-    border-bottom: 1px solid var(--bg3);
+    background: rgba(7,11,20,.72);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+    padding: calc(var(--safe-top) + 14px) 18px 12px;
+    border-bottom: 1px solid var(--line);
     position: sticky; top: 0; z-index: 50;
   }
-  .header h1 { font-size: 20px; font-weight: 700; }
+  .header h1 {
+    font-size: 21px; font-weight: 800; letter-spacing: -.02em;
+    background: linear-gradient(135deg, #ffffff 30%, #93c5fd);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
   .header p { font-size: 13px; color: var(--text2); margin-top: 2px; }
 
   /* ===== SCREENS ===== */
   .screen {
     display: none; flex: 1;
-    padding: 16px 16px calc(80px + var(--safe-bottom));
+    padding: 16px 16px calc(112px + var(--safe-bottom));
     overflow-y: auto;
   }
-  .screen.active { display: block; }
+  .screen.active { display: block; animation: rise .3s ease both; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
 
-  /* ===== CARDS ===== */
+  /* ===== CARDS（立体感＋上端ハイライト） ===== */
   .card {
-    background: var(--bg2); border-radius: var(--radius);
-    padding: 16px; margin-bottom: 12px;
+    background: linear-gradient(180deg, rgba(148,163,184,.06), rgba(148,163,184,0) 42%), var(--bg2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px 16px; margin-bottom: 14px;
+    box-shadow: 0 8px 24px rgba(2,6,17,.35);
   }
   .card-title {
-    font-size: 13px; font-weight: 600; color: var(--accent2);
-    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px;
+    font-size: 12px; font-weight: 700; color: var(--accent2);
+    text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 12px;
   }
 
   /* ===== FORM ===== */
@@ -88,140 +123,198 @@
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   input, select {
     width: 100%; padding: 12px 14px;
-    background: var(--bg3); border: 1px solid transparent;
-    border-radius: 10px; color: var(--text); font-size: 16px;
-    outline: none; transition: border-color .2s;
+    background: rgba(15,23,42,.6); border: 1px solid var(--line);
+    border-radius: 12px; color: var(--text); font-size: 16px;
+    outline: none; transition: border-color .2s, box-shadow .2s;
     -webkit-appearance: none;
   }
-  input:focus, select:focus { border-color: var(--accent); }
+  input:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.18);
+  }
   select option { background: var(--bg2); }
 
-  /* ===== BUTTONS ===== */
+  /* ===== BUTTONS（グラデーション＋グロー） ===== */
   .btn {
     display: block; width: 100%; padding: 14px;
-    border: none; border-radius: var(--radius);
-    font-size: 16px; font-weight: 600; cursor: pointer;
-    transition: opacity .2s, transform .1s;
+    border: none; border-radius: 14px;
+    font-size: 16px; font-weight: 700; letter-spacing: .01em; cursor: pointer;
+    transition: opacity .2s, transform .15s, box-shadow .2s;
   }
-  .btn:active { transform: scale(.98); opacity: .85; }
-  .btn-primary { background: var(--accent); color: white; }
-  .btn-success { background: var(--green); color: white; }
+  .btn:active { transform: scale(.97); opacity: .9; }
+  .btn-primary {
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: white;
+    box-shadow: 0 6px 20px rgba(59,130,246,.35);
+  }
+  .btn-success {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: white;
+    box-shadow: 0 6px 20px rgba(34,197,94,.28);
+  }
   .btn-outline {
-    background: transparent; color: var(--accent2);
-    border: 1.5px solid var(--accent);
+    background: rgba(59,130,246,.08); color: var(--accent2);
+    border: 1.5px solid rgba(96,165,250,.5);
   }
   .btn-sm {
     padding: 8px 14px; font-size: 14px; width: auto; display: inline-block;
   }
-  .btn-danger { background: var(--red); color: white; }
+  .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
 
-  /* ===== BADGES ===== */
+  /* ===== BADGES（ピル型＋輪郭） ===== */
   .badge {
-    display: inline-block; padding: 3px 10px; border-radius: 20px;
-    font-size: 12px; font-weight: 600;
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; letter-spacing: .02em;
+    border: 1px solid transparent;
   }
-  .badge-blue { background: rgba(59,130,246,.2); color: var(--accent2); }
-  .badge-green { background: rgba(34,197,94,.2); color: var(--green); }
-  .badge-yellow { background: rgba(245,158,11,.2); color: var(--yellow); }
-  .badge-red { background: rgba(239,68,68,.2); color: var(--red); }
+  .badge-blue { background: rgba(59,130,246,.12); color: var(--accent2); border-color: rgba(59,130,246,.35); }
+  .badge-green { background: rgba(34,197,94,.12); color: #4ade80; border-color: rgba(34,197,94,.35); }
+  .badge-yellow { background: rgba(245,158,11,.12); color: #fbbf24; border-color: rgba(245,158,11,.35); }
+  .badge-red { background: rgba(239,68,68,.12); color: #f87171; border-color: rgba(239,68,68,.35); }
 
   /* ===== PROGRAM ===== */
-  .week-card { background: var(--bg2); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
+  .week-card {
+    background: linear-gradient(180deg, rgba(148,163,184,.05), rgba(148,163,184,0) 40%), var(--bg2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius); margin-bottom: 14px; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(2,6,17,.3);
+  }
   .week-header {
-    padding: 12px 16px; background: var(--bg3);
+    padding: 12px 16px;
+    background: linear-gradient(90deg, rgba(59,130,246,.14), rgba(59,130,246,.02));
+    border-bottom: 1px solid var(--line);
     display: flex; justify-content: space-between; align-items: center;
   }
-  .week-header h3 { font-size: 15px; font-weight: 700; }
+  .week-header h3 { font-size: 15px; font-weight: 800; letter-spacing: -.01em; }
   .session-row {
-    padding: 14px 16px; border-bottom: 1px solid var(--bg3);
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
     cursor: pointer; transition: background .15s;
   }
   .session-row:last-child { border-bottom: none; }
-  .session-row:active { background: var(--bg3); }
+  .session-row:active { background: rgba(59,130,246,.08); }
   .session-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-  .session-date { font-size: 14px; font-weight: 600; }
+  .session-date { font-size: 14px; font-weight: 700; }
   .session-type { font-size: 12px; color: var(--text2); margin-top: 2px; }
   .sets-preview { font-size: 12px; color: var(--text2); }
 
   /* ===== WORKOUT ===== */
   .phase-label {
-    font-size: 12px; font-weight: 700; color: var(--text2);
-    text-transform: uppercase; letter-spacing: 1px;
-    margin: 16px 0 8px; padding-left: 4px;
+    font-size: 12px; font-weight: 800; color: var(--text2);
+    text-transform: uppercase; letter-spacing: 1.5px;
+    margin: 18px 0 8px; padding-left: 12px; position: relative;
+  }
+  .phase-label::before {
+    content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    width: 4px; height: 12px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--accent), #6366f1);
   }
   .set-row {
     display: flex; align-items: center;
-    background: var(--bg2); border-radius: 10px;
+    background: linear-gradient(180deg, rgba(148,163,184,.04), rgba(148,163,184,0) 50%), var(--bg2);
+    border: 1px solid var(--line);
+    border-radius: 14px;
     padding: 12px 14px; margin-bottom: 8px;
     gap: 12px;
   }
-  .set-num { font-size: 14px; font-weight: 700; color: var(--text2); width: 32px; }
+  .set-num {
+    width: 30px; height: 30px; flex-shrink: 0; border-radius: 10px;
+    background: var(--bg3); display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 800; color: var(--text2);
+  }
   .set-info { flex: 1; }
-  .set-weight { font-size: 18px; font-weight: 700; }
+  .set-weight { font-size: 18px; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
   .set-reps { font-size: 13px; color: var(--text2); }
   .set-done {
-    width: 34px; height: 34px; border-radius: 50%;
+    width: 36px; height: 36px; border-radius: 50%;
     border: 2px solid var(--bg3); background: none;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
     transition: all .2s;
   }
-  .set-done.checked { background: var(--green); border-color: var(--green); }
+  .set-done.checked {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    border-color: transparent;
+    box-shadow: 0 0 14px rgba(34,197,94,.45);
+  }
   .set-done svg { width: 18px; height: 18px; }
   .inol-bar-wrap { margin-top: 8px; }
-  .inol-bar-bg { background: var(--bg3); border-radius: 4px; height: 6px; margin-top: 4px; }
-  .inol-bar-fill { height: 6px; border-radius: 4px; transition: width .5s; }
+  .inol-bar-bg { background: rgba(15,23,42,.7); border: 1px solid var(--line); border-radius: 6px; height: 8px; margin-top: 4px; overflow: hidden; }
+  .inol-bar-fill { height: 100%; border-radius: 6px; transition: width .5s; }
 
   /* ===== RECORDS ===== */
   .record-row {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 12px 0; border-bottom: 1px solid var(--bg3);
+    padding: 12px 0; border-bottom: 1px solid var(--line);
   }
   .record-row:last-child { border-bottom: none; }
 
   /* ===== ANALYSIS ===== */
   .chart-wrap { position: relative; height: 220px; margin: 8px 0; }
-  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
   .stat-box {
-    background: var(--bg3); border-radius: 10px; padding: 14px;
+    background: linear-gradient(180deg, rgba(148,163,184,.06), rgba(148,163,184,0) 45%), var(--bg2);
+    border: 1px solid var(--line);
+    border-radius: 14px; padding: 16px 12px;
     text-align: center;
+    box-shadow: 0 6px 18px rgba(2,6,17,.3);
   }
-  .stat-val { font-size: 26px; font-weight: 800; color: var(--accent2); }
-  .stat-unit { font-size: 12px; }
+  .stat-val {
+    font-size: 28px; font-weight: 800; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+    display: inline-block;
+    background: linear-gradient(135deg, #93c5fd, #60a5fa 45%, #818cf8);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .stat-unit { font-size: 12px; color: var(--text2); }
   .stat-lbl { font-size: 12px; color: var(--text2); margin-top: 2px; }
 
   /* ===== THEORY ===== */
   .theory-section { margin-bottom: 20px; }
-  .theory-section h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--accent2); }
+  .theory-section h3 { font-size: 16px; font-weight: 800; margin-bottom: 8px; color: var(--accent2); letter-spacing: -.01em; }
   .theory-section p { font-size: 14px; line-height: 1.7; color: var(--text2); }
   .theory-section ul { padding-left: 18px; }
   .theory-section li { font-size: 14px; line-height: 1.8; color: var(--text2); }
 
   /* ===== MISC ===== */
-  .divider { height: 1px; background: var(--bg3); margin: 12px 0; }
-  .empty-state { text-align: center; padding: 40px 20px; color: var(--text2); }
+  .divider { height: 1px; background: var(--line); margin: 14px 0; }
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--text2); }
   .empty-state svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: .4; }
   .tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
   .max-day-badge {
     background: linear-gradient(135deg, #f59e0b, #ef4444);
-    color: white; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700;
+    color: white; border-radius: 8px; padding: 3px 10px; font-size: 11px; font-weight: 800;
+    box-shadow: 0 4px 14px rgba(245,158,11,.35);
   }
-  .progress-ring { display: flex; align-items: center; gap: 12px; }
+  .progress-ring { display: flex; align-items: center; gap: 14px; }
   .ring-wrap { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
-  .ring-svg { transform: rotate(-90deg); }
-  .ring-pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+  .ring-svg { transform: rotate(-90deg); filter: drop-shadow(0 0 6px rgba(59,130,246,.45)); }
+  .ring-pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
-  /* ===== MODAL ===== */
+  /* ===== MODAL（ボトムシート＋グラバー） ===== */
   .modal-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+    display: none; position: fixed; inset: 0;
+    background: rgba(2,6,17,.7);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
     z-index: 200; align-items: flex-end;
   }
   .modal-overlay.open { display: flex; }
   .modal {
-    background: var(--bg2); border-radius: var(--radius) var(--radius) 0 0;
-    padding: 20px 20px calc(20px + var(--safe-bottom)); width: 100%;
+    background: linear-gradient(180deg, rgba(148,163,184,.06), rgba(148,163,184,0) 30%), var(--bg2);
+    border-top: 1px solid var(--line);
+    border-radius: 22px 22px 0 0;
+    padding: 26px 20px calc(20px + var(--safe-bottom)); width: 100%;
     max-height: 90vh; overflow-y: auto;
+    animation: sheetUp .3s ease both;
   }
-  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+  @keyframes sheetUp {
+    from { transform: translateY(24px); opacity: .6; }
+    to { transform: none; opacity: 1; }
+  }
+  .modal::before {
+    content: ''; display: block; width: 40px; height: 4px; border-radius: 2px;
+    background: var(--bg3); margin: -12px auto 14px;
+  }
+  .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 16px; letter-spacing: -.01em; }
   .modal-close { float: right; background: none; border: none; color: var(--text2); font-size: 22px; cursor: pointer; }
 
   /* ===== INPUT LOG ===== */
@@ -229,40 +322,54 @@
   .log-input-row input { flex: 1; }
   .rpe-dots { display: flex; gap: 6px; }
   .rpe-dot {
-    width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--bg3);
-    background: none; color: var(--text2); font-size: 12px; cursor: pointer;
+    width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--bg3);
+    background: none; color: var(--text2); font-size: 12px; font-weight: 700; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
+    transition: all .15s;
   }
-  .rpe-dot.active { border-color: var(--accent); background: var(--accent); color: white; }
+  .rpe-dot.active {
+    border-color: transparent;
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: white;
+    box-shadow: 0 0 12px rgba(59,130,246,.5);
+  }
 
   /* ===== SETUP SCREEN ===== */
-  .setup-hero { text-align: center; padding: 24px 0 20px; }
-  .setup-hero h2 { font-size: 26px; font-weight: 800; }
+  .setup-hero { text-align: center; padding: 28px 0 22px; }
+  .setup-hero h2 {
+    font-size: 28px; font-weight: 800; letter-spacing: -.02em;
+    background: linear-gradient(135deg, #ffffff 30%, #93c5fd);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
   .setup-hero p { font-size: 14px; color: var(--text2); margin-top: 6px; }
   .step-indicator { display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; }
   .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bg3); transition: background .3s; }
   .step-dot.active { background: var(--accent); }
 
-  /* ===== REST TIMER ===== */
+  /* ===== REST TIMER（フローティング・すりガラス） ===== */
   .rest-banner {
     display: none;
-    position: fixed; left: 0; right: 0;
-    bottom: calc(58px + var(--safe-bottom));
-    background: var(--bg2); border-top: 1px solid var(--accent);
+    position: fixed; left: 12px; right: 12px;
+    bottom: calc(88px + var(--safe-bottom));
+    background: rgba(15,23,42,.88);
+    -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+    border: 1px solid rgba(59,130,246,.35);
+    border-radius: 18px;
     padding: 12px 16px; z-index: 150;
-    box-shadow: 0 -4px 20px rgba(0,0,0,.4);
+    box-shadow: 0 12px 40px rgba(2,6,17,.6), 0 0 24px rgba(59,130,246,.12);
   }
-  .rest-banner.open { display: block; }
+  .rest-banner.open { display: block; animation: rise .25s ease both; }
   .rest-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .rest-label { font-size: 13px; color: var(--text2); }
-  .rest-time { font-size: 24px; font-weight: 800; color: var(--accent2); font-variant-numeric: tabular-nums; }
+  .rest-time { font-size: 26px; font-weight: 800; color: var(--accent2); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
   .rest-actions { display: flex; gap: 8px; }
   .rest-actions button {
-    padding: 6px 12px; border-radius: 8px; border: 1.5px solid var(--bg3);
-    background: none; color: var(--text2); font-size: 13px; font-weight: 600; cursor: pointer;
+    padding: 6px 12px; border-radius: 10px; border: 1.5px solid var(--bg3);
+    background: none; color: var(--text2); font-size: 13px; font-weight: 700; cursor: pointer;
   }
-  .rest-bar-bg { background: var(--bg3); border-radius: 4px; height: 6px; overflow: hidden; }
-  .rest-bar-fill { height: 6px; border-radius: 4px; background: var(--accent); transition: width 1s linear; }
+  .rest-bar-bg { background: rgba(15,23,42,.7); border: 1px solid var(--line); border-radius: 6px; height: 8px; overflow: hidden; }
+  .rest-bar-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, #3b82f6, #6366f1); transition: width 1s linear; }
 </style>
 </head>
 <body>
@@ -449,12 +556,14 @@ let state = JSON.parse(localStorage.getItem('bp-state') || 'null') || {
   profile: null,
   program: null,
   currentSession: null,
-  records: [],    // [{date, sessionType, sets:[{weight,reps,done}], notes, rpe, fatigue, restActual}]
+  records: [],    // [{key, date, type, sets:[{weight,reps,rpe,amrap?}], rpe, fatigue, notes, restActual, missed, timestamp}]
   completedSessions: {},  // sessionKey: true
-  bodyweights: []  // [{date, weight, fat}]
+  bodyweights: [],  // [{date, weight, fat}]
+  readiness: []   // [{date, sleepH, sleepQ, soreness, stress, score, applied}]
 };
 // 既存データに欄が無い場合の初期化（後方互換）
 if (!Array.isArray(state.bodyweights)) state.bodyweights = [];
+if (!Array.isArray(state.readiness)) state.readiness = [];
 if (state.profile && state.profile.trainingMax == null) state.profile.trainingMax = state.profile.currentMax;
 
 function save() { localStorage.setItem('bp-state', JSON.stringify(state)); }
@@ -732,17 +841,53 @@ function updateRestUI() {
 }
 
 // ===== データのバックアップ／復元 =====
-function exportData() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+// ファイルダウンロードの共通処理（JSONバックアップ・CSV出力で共用）
+function downloadBlob(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const today = new Date().toISOString().split('T')[0];
   a.href = url;
-  a.download = `benchpress-backup-${today}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportData() {
+  const today = new Date().toISOString().split('T')[0];
+  downloadBlob(`benchpress-backup-${today}.json`, JSON.stringify(state, null, 2), 'application/json');
+}
+
+// CSV用エスケープ（カンマ・改行・ダブルクォートを含む値を安全に囲む）
+function csvEscape(v) {
+  if (v == null) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// 記録・体重をCSVで出力（1セット=1行、Excelでの文字化け防止にBOM付きUTF-8）
+function exportCSV() {
+  if (!state.records.length && !state.bodyweights.length) { alert('出力できる記録がまだありません。'); return; }
+  const today = new Date().toISOString().split('T')[0];
+  const BOM = '\uFEFF';
+  if (state.records.length) {
+    const rows = [['date','type','phase','week','set_no','weight_kg','reps','rpe','amrap','session_rpe','fatigue','missed','notes'].join(',')];
+    state.records.forEach(r => {
+      const sess = sessionForRecord(r);
+      (r.sets || []).forEach((s, i) => {
+        rows.push([r.date, r.type, sess?.phaseName || '', sess?.weekIdx != null ? sess.weekIdx + 1 : '',
+          i + 1, s.weight, s.reps, s.rpe ?? '', s.amrap ? 1 : '', r.rpe || '', r.fatigue ?? '', r.missed ? 1 : '', csvEscape(r.notes)].join(','));
+      });
+    });
+    downloadBlob(`benchpress-records-${today}.csv`, BOM + rows.join('\n'), 'text/csv');
+  }
+  if (state.bodyweights.length) {
+    const bwRows = [['date','weight_kg','fat_pct'].join(',')];
+    state.bodyweights.forEach(b => bwRows.push([b.date, b.weight, b.fat ?? ''].join(',')));
+    downloadBlob(`benchpress-bodyweight-${today}.csv`, BOM + bwRows.join('\n'), 'text/csv');
+  }
+  setTimeout(() => alert('CSVを出力しました。'), 300);
 }
 
 function importData(event) {
@@ -1008,8 +1153,11 @@ function buildProgramSessions(profile, rmForWeek) {
     const wedDate = new Date(monDate); wedDate.setDate(monDate.getDate() + 2);
     const satDate = new Date(monDate); satDate.setDate(monDate.getDate() + 5);
 
-    const vol = buildSession(monDate, 'volume', weekRM, phase, w, isDeload);
-    const tech = buildSession(wedDate, 'technique', weekRM, phase, w, isDeload);
+    // MAXテスト週（最終週＋中間MAX週）の月・水は指数型テーパー構成にする
+    // （量約50%減・強度維持・最後の高重量刺激はテスト5日前: Pritchard 2018 / Travis 2020）
+    const taperWeek = isMaxDay;
+    const vol = buildSession(monDate, 'volume', weekRM, phase, w, isDeload, false, taperWeek);
+    const tech = buildSession(wedDate, 'technique', weekRM, phase, w, isDeload, false, taperWeek);
     const main = buildSession(satDate, 'main', weekRM, phase, w, isDeload, isMaxDay);
 
     // 週あたりINOLを目標2.0〜2.8に調整（蓄積・強化期のみ。ピーキング/テーパーは意図的に低負荷）
@@ -1129,7 +1277,7 @@ function validateAndOptimize() {
   return report;
 }
 
-function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = false) {
+function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = false, taperWeek = false) {
   const dateStr = date.toISOString().split('T')[0];
   let mainSets = [];
   let rackup = null;
@@ -1153,22 +1301,30 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
     // 高重量・低レップ志向（神経系強化）。量はINOL自動調整でセット数を確保
     // レップレンジは1〜5。蓄積期を最大の5レップにし、強化期→ピーキングへと
     // 強度が上がるにつれレップを減らす（周期化の一貫性を保つ）
-    let pct, sets, reps;
-    if (phaseName === 'accumulation') { pct = 80; sets = 5; reps = 5; }
+    let pct, sets, reps, note = '';
+    if (taperWeek) {
+      // テーパー週(MAXテスト週)の月曜＝テスト5日前: 最後の高重量刺激。
+      // 量を約50%削減しつつ強度は維持する（Pritchard 2018）。これ以降は疲労を抜くだけ。
+      // 45歳以上は回復を優先してやや低めに（マスターズの回復ガイドライン）
+      pct = (state.profile?.age >= 45) ? 85 : 87; sets = 3; reps = 1;
+      note = '⚡ 最後の高重量刺激（テーパー）— これ以降は疲労を抜く';
+    }
+    else if (phaseName === 'accumulation') { pct = 80; sets = 5; reps = 5; }
     else if (phaseName === 'intensification') { pct = 85; sets = 5; reps = 3; }
     else if (phaseName === 'peaking') { pct = 82; sets = 3; reps = 2; }
     // ディロードは45歳以上でより深く落とす（マスターズは回復微週の強度減を10〜15%と大きめに取る）
-    else { /* deload=テーパー週 */ pct = (state.profile?.age >= 45) ? 65 : 70; sets = 2; reps = 3; }
+    else { /* deload=回復微週 */ pct = (state.profile?.age >= 45) ? 65 : 70; sets = 2; reps = 3; note = '軽め・疲労抜き'; }
 
     for (let i = 0; i < sets; i++) {
-      mainSets.push({ weight: pctWeight(rm1, pct), reps, note: phaseName === 'deload' ? '軽め・疲労抜き' : '' });
+      mainSets.push({ weight: pctWeight(rm1, pct), reps, note });
     }
     // APRE(自動調整式漸進抵抗運動): 蓄積期・強化期のみ、最終セットをAMRAPにする。
     // 2025年のネットワークメタ分析でベンチプレス1RM向上に最も効果的とされた方式。
     // 「限界2〜3回手前(RPE9)」で止める(筋力向上に完全な追い込みは不要: Robinson 2024)。
-    // 達成レップ＋RPEが毎週の高信頼データ源となり、既存の達成度評価で翌週負荷が自動調整される。
-    // ピーキング/ディロードはテーパー保護のため実施しない。
-    if (phaseName === 'accumulation' || phaseName === 'intensification') {
+    // 達成レップ＋RPEが毎週の高信頼データ源となり、達成度評価とAPRE即時調整で負荷が自動追従する。
+    // ピーキング/ディロードに加え、テーパー週（中間MAX週が蓄積/強化フェーズのままの場合を含む）
+    // もテーパー保護のため実施しない。
+    if (!taperWeek && (phaseName === 'accumulation' || phaseName === 'intensification')) {
       const last = mainSets[mainSets.length - 1];
       last.amrap = true;
       last.note = '🔥 AMRAP: 限界2〜3回手前(RPE9)まで・上限6回';
@@ -1178,13 +1334,18 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
   if (type === 'technique') {
     // ポーズ＋低レップで爆発的な立ち上がり（レートオブフォースデベロップメント）を強化
     let pct, sets, reps, note;
-    if (phaseName === 'accumulation') { pct = 70; sets = 4; reps = 3; note = '1秒ポーズ・爆発的に挙上'; }
+    if (taperWeek) {
+      // テーパー週の水曜＝テスト3日前: 神経系プライミングのみ。
+      // 高重量はテスト5〜7日前までに終える原則に従い、軽い爆発的挙上に留める
+      pct = 75; sets = 2; reps = 2; note = '爆発的スピード重視（テーパー・追い込まない）';
+    }
+    else if (phaseName === 'accumulation') { pct = 70; sets = 4; reps = 3; note = '1秒ポーズ・爆発的に挙上'; }
     else if (phaseName === 'intensification') { pct = 75; sets = 4; reps = 2; note = '1秒ポーズ・爆発的に挙上'; }
     else if (phaseName === 'peaking') { pct = 87; sets = 3; reps = 1; note = '🎙️ ポーズ＋コマンド練習'; }
-    else { /* deload=テーパー週 */ pct = 88; sets = 2; reps = 1; note = '🎙️ オープナー練習（コマンド）'; }
+    else { /* deload=回復微週 */ pct = 88; sets = 2; reps = 1; note = '🎙️ オープナー練習（コマンド）'; }
 
     for (let i = 0; i < sets; i++) {
-      mainSets.push({ weight: pctWeight(rm1, pct), reps, note, commands: phaseName === 'peaking' || phaseName === 'deload' });
+      mainSets.push({ weight: pctWeight(rm1, pct), reps, note, commands: !taperWeek && (phaseName === 'peaking' || phaseName === 'deload') });
     }
   }
 
@@ -1222,7 +1383,7 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
     }
   }
 
-  return { date: dateStr, type, phaseName, weekIdx, mainSets, rackup, isMaxDay: false, rm1: round25(rm1) };
+  return { date: dateStr, type, phaseName, weekIdx, mainSets, rackup, isMaxDay: false, taperWeek: !!taperWeek, rm1: round25(rm1) };
 }
 
 // ===== RENDER PROGRAM =====
@@ -1283,8 +1444,9 @@ function renderProgram() {
       </div>
       <div class="divider"></div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-outline btn-sm" onclick="exportData()" style="flex:1;font-size:12px;padding:8px">📥 バックアップ</button>
-        <button class="btn btn-outline btn-sm" onclick="document.getElementById('restoreInput').click()" style="flex:1;font-size:12px;padding:8px">📤 復元</button>
+        <button class="btn btn-outline btn-sm" onclick="exportData()" style="flex:1;font-size:11px;padding:8px 4px;white-space:nowrap">📥 バックアップ</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('restoreInput').click()" style="flex:1;font-size:11px;padding:8px 4px;white-space:nowrap">📤 復元</button>
+        <button class="btn btn-outline btn-sm" onclick="exportCSV()" style="flex:1;font-size:11px;padding:8px 4px;white-space:nowrap">📊 CSV出力</button>
       </div>
     </div>`;
 
@@ -1311,6 +1473,7 @@ function renderProgram() {
         <h3>Week ${w + 1} ${isCurrentWeek ? '◀ 今週' : ''}</h3>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="badge ${phName === 'deload' ? 'badge-red' : phName === 'peaking' ? 'badge-yellow' : 'badge-blue'}">${phaseLabels[phName] || ''}</span>
+          ${wSessions.some(x => x.taperWeek) ? '<span class="badge badge-yellow">テーパー</span>' : ''}
           <span style="font-size:12px;color:var(--text2)">${doneCount}/${wSessions.length}</span>
         </div>
       </div>`;
@@ -1332,7 +1495,7 @@ function renderProgram() {
             ${done ? '<div style="color:var(--green);font-size:12px;margin-top:4px">✓ 完了</div>' : ''}
           </div>
         </div>
-        <div class="sets-preview">INOL ${sessionInol} | 計画1RM ${rm}kg | ${s.mainSets.length}セット</div>
+        <div class="sets-preview">INOL ${sessionInol} | 計画1RM ${rm}kg | ${s.mainSets.length}セット${s.apreAdjust ? ' | 🔥APRE調整' : ''}</div>
       </div>`;
     });
     html += '</div>';
@@ -1399,7 +1562,7 @@ function renderTraining(session) {
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
           <div style="font-size:20px;font-weight:800">${fmtDate(session.date)}</div>
-          <div style="font-size:14px;color:var(--text2);margin-top:2px">${typeLabels[session.type]} · ${phaseLabels[session.phaseName]}</div>
+          <div style="font-size:14px;color:var(--text2);margin-top:2px">${typeLabels[session.type]} · ${phaseLabels[session.phaseName]}${session.taperWeek && !session.isMaxDay ? '（テーパー週）' : ''}</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:12px;color:var(--text2)">計画1RM</div>
@@ -1407,6 +1570,18 @@ function renderTraining(session) {
         </div>
       </div>
     </div>`;
+
+  // 当日のレディネスチェック（睡眠・筋肉痛・ストレス → 当日メニュー微調整の提案）
+  html += readinessCardHTML(session, logged, done);
+
+  // APRE自動調整が入っている日は理由を明示する（黙って重量を変えない）
+  if (session.apreAdjust) {
+    const a = session.apreAdjust;
+    html += `<div class="card" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3)">
+      <div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:4px">🔥 APRE自動調整</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6">前回のAMRAP ${a.achievedReps}回（目標${a.plannedReps}回）の結果により、この日の重量を ${a.deltaKg > 0 ? '+' : ''}${a.deltaKg}kg 調整済みです。達成レップに応じて次の負荷を即時調整するAPRE方式です。</div>
+    </div>`;
+  }
 
   if (session.isMaxDay) {
     html += `<div class="card" style="background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(239,68,68,.15));border:1px solid rgba(245,158,11,.3)">
@@ -1437,7 +1612,8 @@ function renderTraining(session) {
 
   // 休憩実測（記録済みセッションのみ）
   if (logged && logged.restActual && logged.restActual.length) {
-    const heavy = session.isMaxDay || session.phaseName === 'peaking' || session.type === 'main';
+    // テーパー週の月曜（高強度シングル）も高強度日として長めの休憩を推奨
+    const heavy = session.isMaxDay || session.phaseName === 'peaking' || session.type === 'main' || (session.taperWeek && session.type === 'volume');
     const recommended = heavy ? 240 : (session.phaseName === 'deload' ? 120 : 180);
     const avgRest = Math.round(logged.restActual.reduce((a,b)=>a+b,0) / logged.restActual.length);
     const short = avgRest < recommended * 0.8;
@@ -1529,7 +1705,7 @@ function toggleSet(idx) {
   if (btn.classList.contains('checked')) {
     restCheckTimestamps.push(Date.now());
     const s = state.currentSession;
-    const heavy = s && (s.isMaxDay || s.phaseName === 'peaking' || s.type === 'main');
+    const heavy = s && (s.isMaxDay || s.phaseName === 'peaking' || s.type === 'main' || (s.taperWeek && s.type === 'volume'));
     startRest(heavy ? 240 : (s?.phaseName === 'deload' ? 120 : 180));
   }
 }
@@ -1664,14 +1840,22 @@ function saveLog() {
   renderRecords();
   renderProgram();
 
-  // 記録を分析し、必要ならプログラム変更を「提案」する（自動では変えない）
+  // 記録を分析し、必要ならプログラム変更を「提案」する（自動では変えない）。
+  // マクロ(planRecalibration)が適用された場合はAMRAP結果が新計画に織り込み済みのため、
+  // マイクロ(APRE)は「マクロが変更なし or 却下」の時のみ提示する（二重調整防止）
   const plan = planRecalibration(s, sets);
+  const apre = planApreAdjust(s, newRec);
   if (plan && plan.changed) {
-    setTimeout(() => confirmAndApply(plan), 150);
+    setTimeout(() => {
+      const applied = confirmAndApply(plan);
+      if (!applied && apre && apre.deltaKg !== 0) confirmApre(apre);
+    }, 150);
+  } else if (apre && apre.deltaKg !== 0) {
+    setTimeout(() => confirmApre(apre), 150);
   } else if (plan && plan.noRpe) {
     setTimeout(() => alert('記録を保存しました。トップセット（最重量セット）のRPEを入力すると、実力に合わせたプログラム自動調整が行われます。'), 150);
   } else if (plan) {
-    setTimeout(() => alert('記録を保存しました。分析の結果、プログラムは現状維持が最適です 👍'), 150);
+    setTimeout(() => alert(`記録を保存しました。分析の結果、プログラムは現状維持が最適です 👍${apre ? '\n（AMRAPは目標帯内のため、次のボリューム日も同じ重量です）' : ''}`), 150);
   } else {
     setTimeout(() => alert('記録を保存しました。'), 150);
   }
@@ -1827,12 +2011,73 @@ function confirmAndApply(plan) {
   }
   msg += '\n\nこの内容でプログラムを変更しますか？';
 
+  // 適用したかどうかを返す（却下時のみAPREマイクロ調整を提示する分岐で使う）
   if (confirm(msg)) {
     applyRecalibration(plan);
     renderProgram();
     if (state.currentSession) renderTraining(state.currentSession);
     if (document.getElementById('screen-analysis').classList.contains('active')) renderAnalysis();
     setTimeout(() => alert('プログラムを更新しました 💪'), 100);
+    return true;
+  }
+  return false;
+}
+
+// ===== APRE即時自動調整（マイクロ調整） =====
+// AMRAPの達成レップ数に応じて「次のボリューム日のセット重量」を即座に±調整する
+// 本来のAPREテーブル方式。planRecalibrationとの責務分離:
+//   - planRecalibration(マクロ): 計画1RM(rm1)と期間全体を再構築。乖離±2.5kg以上でconfirm提案
+//   - planApreAdjust(マイクロ): 次のvolume日のセット重量のみ(rm1は不変)
+// マクロが適用された場合、AMRAP結果は新rm1に織り込み済み＋以降セッションも再構築済みのため、
+// APREを重ねると二重調整になる。よってAPREは「マクロが変更なし or ユーザーが却下」の時のみ発動する。
+function planApreAdjust(session, rec) {
+  if (!state.program || !session || session.type !== 'volume') return null;
+  if (session.phaseName !== 'accumulation' && session.phaseName !== 'intensification') return null;
+  const am = rec && rec.sets ? rec.sets.find(s => s.amrap && s.weight && s.reps) : null;
+  if (!am) return null;
+  const planned = session.mainSets.find(s => s.amrap);
+  const plannedReps = planned ? planned.reps : 3;
+  const achieved = am.reps;
+  // APRE調整テーブル（達成レップ → 次回重量の増減）
+  let deltaKg;
+  if (achieved >= 6) deltaKg = 2.5;                          // 上限到達 → 増量
+  else if (achieved >= plannedReps) deltaKg = 0;             // 目標帯 → 維持
+  else if (achieved === plannedReps - 1) deltaKg = -2.5;     // わずかに未達 → 微減
+  else deltaKg = -Math.max(2.5, round25(am.weight * 0.05));  // 大きく未達 → 約5%減
+  // ターゲット: 次の未実施ボリューム日（蓄積/強化のみ。テーパー週・ピーキング週の重量は保護）
+  const target = state.program.sessions.find(s =>
+    s.date > session.date && s.type === 'volume' && !s.taperWeek
+    && (s.phaseName === 'accumulation' || s.phaseName === 'intensification')
+    && !state.completedSessions[s.date + s.type]
+    && !state.records.some(r => r.key === s.date + '_' + s.type));
+  if (!target) return null;
+  return { target, deltaKg, achievedReps: achieved, plannedReps, sourceDate: session.date };
+}
+
+// APRE調整を適用。recalcSetWeightsが常にw0(基準重量)から再計算するため、
+// 同じ記録を再保存しても累積せず、最新のAMRAP結果が古い調整を置き換える。
+function applyApreAdjust(adj) {
+  if (!adj || !adj.target) return;
+  const t = adj.target;
+  t.apreAdjust = { deltaKg: adj.deltaKg, sourceDate: adj.sourceDate, achievedReps: adj.achievedReps, plannedReps: adj.plannedReps };
+  recalcSetWeights(t);
+  save();
+}
+
+// APRE調整の確認ダイアログ（confirmAndApplyと同型。黙って変えない）
+function confirmApre(adj) {
+  if (!adj || !adj.deltaKg) return;
+  const t = adj.target;
+  const base = t.mainSets[0] ? (t.mainSets[0].w0 ?? t.mainSets[0].weight) : 0;
+  const after = round25(base + adj.deltaKg);
+  let msg = '【APRE自動調整】\n';
+  msg += `AMRAPセット ${adj.achievedReps}回 達成（目標${adj.plannedReps}回${adj.achievedReps >= 6 ? '・上限到達' : ''}）。\n`;
+  msg += `次のボリューム日（${fmtDate(t.date)}）の重量を ${adj.deltaKg > 0 ? '+' : ''}${adj.deltaKg}kg 調整します（${base}kg → ${after}kg）。\n`;
+  msg += '達成レップに応じて次の負荷を即時調整するAPRE方式です。\n\n適用しますか？';
+  if (confirm(msg)) {
+    applyApreAdjust(adj);
+    renderProgram();
+    setTimeout(() => alert('次のボリューム日の重量を調整しました 🔥'), 100);
   }
 }
 
@@ -1933,6 +2178,23 @@ function fosterMetrics() {
   return { monotony, strain: weekLoad * monotony, weekLoad };
 }
 
+// セッション実施率（アドヒアランス）。予定日を過ぎたセッションのうち、
+// 完了チェックまたは記録があるものの割合。筋力向上の最大の予測因子は継続率であり、
+// 実施率が低いと計画1RMの進行と実力が乖離してプログラム全体の前提が崩れる。
+function adherenceStats() {
+  if (!state.program) return null;
+  const today = new Date().toISOString().split('T')[0];
+  const past = state.program.sessions.filter(s => s.date < today);
+  if (past.length < 3) return null; // 少数では割合に意味がない
+  const isDone = s => state.completedSessions[s.date + s.type]
+    || state.records.some(r => r.key === s.date + '_' + s.type);
+  const done = past.filter(isDone).length;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 14);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+  const recentMissed = past.filter(s => s.date >= cutoffStr && !isDone(s)).length;
+  return { planned: past.length, done, rate: done / past.length * 100, recentMissed };
+}
+
 // 指定日以前の最新体重（無ければプロフィール体重）
 function bwAt(date) {
   let bw = state.profile ? state.profile.weight : null;
@@ -1945,7 +2207,7 @@ function bwAt(date) {
 // IPF GLポイント（クラシック・ベンチ単体）
 function ipfGL(e1rm, bw) {
   if (!e1rm || !bw) return null;
-  const female = state.profile && state.profile.sex === 'female';
+  const female = state.profile && state.profile.gender === 'female';
   const [A, B, C] = female
     ? [142.40398, 442.52671, 0.04724]
     : [320.98041, 281.40258, 0.01008];
@@ -2037,6 +2299,172 @@ function regressionForecast() {
   }
   const diffWeeks = (reachDate && planEnd) ? (reachDate - planEnd) / (86400000 * 7) : null;
   return { perWeek, current, target, isBlockTarget, reachDate, planEnd, diffWeeks, insufficientSpan, capped, rate };
+}
+
+// ===== レディネス（毎日の準備度） =====
+// 睡眠・筋肉痛・ストレスの簡易ウェルネスチェック（各25点・計100点）。
+// ウェルネス質問票はHRV計測に匹敵する回復状態の予測力を持つとされ、
+// 特に45歳以上では回復管理が伸びに直結するため、低い日は当日メニューの微調整を提案する。
+function readinessScore(sleepH, sleepQ, soreness, stress) {
+  const sleep = Math.min(sleepH, 8) / 8 * 25;       // 睡眠時間: 8h以上で満点
+  const quality = (sleepQ - 1) / 4 * 25;            // 睡眠の質: 1(最悪)〜5(最高)
+  const sore = (5 - soreness) / 4 * 25;             // 筋肉痛: 1(なし)〜5(強い)
+  const strs = (5 - stress) / 4 * 25;               // ストレス: 1(低い)〜5(高い)
+  return sleep + quality + sore + strs;
+}
+
+// 指定日のレディネスエントリを返す（なければnull）
+function readinessOf(date) {
+  return state.readiness.find(r => r.date === date) || null;
+}
+
+// スコアに応じた当日メニューの調整提案。
+// 強制はせず「適用/そのまま」を選べる。MAXテスト日は重量を触らず延期検討の文言のみ
+// （既存のMAXテスト日カードの「コンディション不良なら延期」方針と整合）。
+function readinessSuggestion(score, session) {
+  if (session?.isMaxDay) {
+    if (score < 55) return { pct: null, dropSet: false, msg: 'レディネスが低めです。MAXテストは体調が戻ってからの延期も検討してください。' };
+    return null;
+  }
+  if (score >= 70) return null; // 準備良好・調整不要
+  if (score >= 55) return { pct: null, dropSet: false, msg: 'やや回復不足です。ウォームアップを丁寧に行い、無理のない範囲で計画をこなしましょう。' };
+  if (score >= 40) return { pct: -2.5, dropSet: false, msg: '回復が不十分です。今日は重量を2.5%下げることを提案します。' };
+  return { pct: -5, dropSet: true, msg: '回復がかなり不足しています。重量-5%＋1セット減を提案します（無理は逆効果です）。' };
+}
+
+// w0(計画上の基準重量)に APRE調整(kg) → レディネス調整(%) の順で適用して実重量を再計算。
+// どちらの調整も常に基準から計算し直すため、再適用・解除・再保存で累積しない。
+function recalcSetWeights(session) {
+  const delta = session.apreAdjust ? session.apreAdjust.deltaKg : 0;
+  const pct = session.readinessAdjust ? session.readinessAdjust.pct : 0;
+  session.mainSets.forEach(set => {
+    if (set.w0 == null) set.w0 = set.weight;
+    set.weight = round25((set.w0 + delta) * (1 + pct / 100));
+  });
+}
+
+// レディネス入力の保存（同日は上書き）
+function saveReadiness() {
+  const sleepH = +document.getElementById('rd-sleeph').value;
+  const q = document.querySelector('#rdQDots .rpe-dot.active');
+  const so = document.querySelector('#rdSoreDots .rpe-dot.active');
+  const st = document.querySelector('#rdStressDots .rpe-dot.active');
+  if (!sleepH || !q || !so || !st) { alert('睡眠時間と3つの項目をすべて入力してください。'); return; }
+  const date = new Date().toISOString().split('T')[0];
+  const score = Math.round(readinessScore(sleepH, +q.dataset.val, +so.dataset.val, +st.dataset.val));
+  state.readiness = state.readiness.filter(r => r.date !== date);
+  state.readiness.push({ date, sleepH, sleepQ: +q.dataset.val, soreness: +so.dataset.val, stress: +st.dataset.val, score, applied: null });
+  state.readiness.sort((a, b) => a.date.localeCompare(b.date));
+  save();
+  if (state.currentSession) renderTraining(state.currentSession);
+}
+
+// レディネス入力UIの選択ボタン（睡眠の質/筋肉痛/ストレス共通）
+function selectReadinessDot(groupId, v) {
+  document.querySelectorAll(`#${groupId} .rpe-dot`).forEach(d => d.classList.remove('active'));
+  event.target.classList.add('active');
+  event.target.dataset.val = v;
+}
+
+// 提案された調整を当日セッションに適用。
+// state.currentSessionはリロード後に計画配列と別オブジェクトになるため、
+// 必ずprogram側のセッションを対象にし、currentSessionを差し替えて同期する。
+function applyReadinessAdjust() {
+  const cs = state.currentSession;
+  if (!cs) return;
+  const s = state.program?.sessions.find(x => x.date === cs.date && x.type === cs.type);
+  if (!s) return;
+  const today = new Date().toISOString().split('T')[0];
+  const rd = readinessOf(today);
+  if (!rd) return;
+  const sug = readinessSuggestion(rd.score, s);
+  if (!sug || sug.pct == null) return;
+  const removed = [];
+  // セット減はAMRAP直前の通常セットを削る（APREのテストセットは保護）
+  if (sug.dropSet && s.mainSets.length > 2) {
+    const lastIdx = s.mainSets.length - 1;
+    const cutIdx = s.mainSets[lastIdx].amrap ? lastIdx - 1 : lastIdx;
+    if (cutIdx > 0) removed.push({ set: s.mainSets.splice(cutIdx, 1)[0], idx: cutIdx });
+  }
+  s.readinessAdjust = { pct: sug.pct, dropSet: !!removed.length, removedSets: removed, sourceDate: today };
+  recalcSetWeights(s);
+  rd.applied = { pct: sug.pct, dropSet: !!removed.length, sessionKey: s.date + s.type };
+  state.currentSession = s;
+  save();
+  renderTraining(s);
+}
+
+// 適用した調整を元に戻す
+function revertReadinessAdjust() {
+  const cs = state.currentSession;
+  if (!cs) return;
+  const s = state.program?.sessions.find(x => x.date === cs.date && x.type === cs.type);
+  if (!s || !s.readinessAdjust) return;
+  const sourceDate = s.readinessAdjust.sourceDate;
+  (s.readinessAdjust.removedSets || []).forEach(r => s.mainSets.splice(r.idx, 0, r.set));
+  delete s.readinessAdjust;
+  recalcSetWeights(s);
+  const rd = readinessOf(sourceDate);
+  if (rd) rd.applied = null;
+  state.currentSession = s;
+  save();
+  renderTraining(s);
+}
+
+// 「今日はそのまま行う」（提案を却下。カードを提案表示から静かな表示に切り替える）
+function declineReadinessAdjust() {
+  const today = new Date().toISOString().split('T')[0];
+  const rd = readinessOf(today);
+  if (rd) { rd.applied = { declined: true }; save(); }
+  if (state.currentSession) renderTraining(state.currentSession);
+}
+
+// トレーニング画面に出すレディネスカードのHTML（当日・未記録・未完了のセッションのみ）
+function readinessCardHTML(session, logged, done) {
+  const today = new Date().toISOString().split('T')[0];
+  if (session.date !== today || logged || done) return '';
+  const rd = readinessOf(today);
+  const dots = (id, labels) => `<div class="rpe-dots" id="${id}">
+    ${[1,2,3,4,5].map(v => `<button type="button" class="rpe-dot" data-val="${v}" onclick="selectReadinessDot('${id}',${v})">${v}</button>`).join('')}
+  </div><div style="font-size:11px;color:var(--text2);margin-top:2px">${labels}</div>`;
+  if (!rd) {
+    return `<div class="card" style="border:1px solid rgba(96,165,250,.3)">
+      <div class="card-title">⚡ 今日のレディネスチェック（10秒）</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">睡眠・筋肉痛・ストレスから今日の準備度を判定し、必要ならメニューを微調整します。</div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label>昨夜の睡眠時間（時間）</label>
+        <input type="number" id="rd-sleeph" step="0.5" min="0" max="14" placeholder="7" style="font-size:14px">
+      </div>
+      <div class="form-group" style="margin-bottom:10px"><label>睡眠の質</label>${dots('rdQDots', '1=最悪 〜 5=最高')}</div>
+      <div class="form-group" style="margin-bottom:10px"><label>筋肉痛・体の張り</label>${dots('rdSoreDots', '1=なし 〜 5=強い')}</div>
+      <div class="form-group" style="margin-bottom:10px"><label>ストレス</label>${dots('rdStressDots', '1=低い 〜 5=高い')}</div>
+      <button class="btn btn-primary btn-sm" style="width:100%" onclick="saveReadiness()">判定する</button>
+    </div>`;
+  }
+  const col = rd.score >= 70 ? 'var(--green)' : rd.score >= 55 ? 'var(--accent2)' : rd.score >= 40 ? 'var(--yellow)' : 'var(--red)';
+  const lbl = rd.score >= 70 ? '準備良好' : rd.score >= 55 ? 'まずまず' : rd.score >= 40 ? '回復不足' : 'かなり回復不足';
+  let body = `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+    <span style="font-size:13px">レディネススコア</span><span style="font-weight:800;color:${col}">${rd.score}点 ${lbl}</span>
+  </div>
+  <div class="inol-bar-bg"><div class="inol-bar-fill" style="width:${rd.score}%;background:${col}"></div></div>`;
+  const sug = readinessSuggestion(rd.score, session);
+  if (session.readinessAdjust) {
+    body += `<div style="font-size:12px;color:var(--yellow);margin-top:8px">🔧 レディネス調整適用中（重量${session.readinessAdjust.pct}%${session.readinessAdjust.dropSet ? '・1セット減' : ''}）</div>
+      <button class="btn btn-outline btn-sm" style="width:100%;margin-top:8px" onclick="revertReadinessAdjust()">元に戻す</button>`;
+  } else if (rd.applied && rd.applied.declined) {
+    body += `<div style="font-size:12px;color:var(--text2);margin-top:8px">今日は計画どおり実施します。${sug && sug.msg ? '（' + sug.msg + '）' : ''}</div>`;
+  } else if (sug && sug.pct != null) {
+    body += `<div style="font-size:12px;color:var(--yellow);margin-top:8px">${sug.msg}</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary btn-sm" style="flex:1" onclick="applyReadinessAdjust()">調整を適用</button>
+        <button class="btn btn-outline btn-sm" style="flex:1" onclick="declineReadinessAdjust()">今日はそのまま</button>
+      </div>`;
+  } else if (sug && sug.msg) {
+    body += `<div style="font-size:12px;color:var(--text2);margin-top:8px">${sug.msg}</div>`;
+  } else {
+    body += `<div style="font-size:12px;color:var(--green);margin-top:8px">回復は十分です。計画どおり攻めましょう 💪</div>`;
+  }
+  return `<div class="card" style="border:1px solid rgba(96,165,250,.3)"><div class="card-title">⚡ 今日のレディネス</div>${body}</div>`;
 }
 
 // ===== コンディション5段階評価 =====
@@ -2142,6 +2570,29 @@ function analyzeCondition() {
     }
   }
 
+  // レディネス（睡眠・筋肉痛・ストレスの自己申告）— 直近7日の平均
+  let readinessReason = null;
+  const rdCutoff = new Date(); rdCutoff.setDate(rdCutoff.getDate() - 7);
+  const recentRd = state.readiness.filter(r => new Date(r.date) >= rdCutoff);
+  if (recentRd.length) {
+    const avgRd = mean(recentRd.map(r => r.score));
+    if (avgRd < 45) {
+      score -= 5;
+      readinessReason = `レディネス（睡眠・筋肉痛・ストレス）が低め（直近平均${Math.round(avgRd)}点）。回復を優先しましょう`;
+    } else if (avgRd >= 70) {
+      score += 2;
+      readinessReason = `レディネスは良好（直近平均${Math.round(avgRd)}点）`;
+    }
+  }
+
+  // セッション実施率（直近2週間で予定をスキップした数）
+  let adhReason = null;
+  const adh = adherenceStats();
+  if (adh && adh.recentMissed >= 2) {
+    score -= 3;
+    adhReason = `直近2週間で予定セッションを${adh.recentMissed}回スキップしています（実施率が下がると計画1RMと実力が乖離します）`;
+  }
+
   // 計画未達セットの検知（つぶれ/回数未達＝疲労または重量設定過大の直接的なサイン）
   let missedReason = null;
   const missedCount = recent.filter(r => r.missed).length;
@@ -2244,6 +2695,8 @@ function analyzeCondition() {
   if (acwrReason) reasons.push(acwrReason);
   if (monoReason) reasons.push(monoReason);
   if (fatigueReason) reasons.push(fatigueReason);
+  if (readinessReason) reasons.push(readinessReason);
+  if (adhReason) reasons.push(adhReason);
 
   let suggest = null;
   if (acwrSuggest) suggest = acwrSuggest; // 怪我リスクは最優先で提示
@@ -2554,6 +3007,22 @@ function renderAnalysis() {
     html += `<div class="card"><div class="card-title">🛡️ 負荷管理（怪我・疲労リスク）</div>${acwrHtml}${fmHtml}</div>`;
   }
 
+  // ===== セッション実施率（アドヒアランス） =====
+  const adh = adherenceStats();
+  if (adh) {
+    const adhCol = adh.rate >= 90 ? 'var(--green)' : adh.rate >= 80 ? 'var(--accent2)' : 'var(--yellow)';
+    html += `<div class="card"><div class="card-title">📅 セッション実施率</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+        <span style="font-size:13px">予定 ${adh.planned}回中 ${adh.done}回 実施</span>
+        <span style="font-weight:800;color:${adhCol}">${Math.round(adh.rate)}%</span>
+      </div>
+      <div class="inol-bar-bg"><div class="inol-bar-fill" style="width:${adh.rate}%;background:${adhCol}"></div></div>
+      ${adh.rate < 80
+        ? `<div style="font-size:12px;color:var(--yellow);margin-top:8px">⚠️ 実施率が低めです。プログラムの進行計画は週3回の実施を前提としています。実施率が低いと計画1RMと実力が乖離するため、頻度を確保できない場合は「設定変更」で期間を見直してください。</div>`
+        : `<div style="font-size:12px;color:var(--text2);margin-top:8px">筋力向上の最大の予測因子は継続率です。この調子で続けましょう。</div>`}
+    </div>`;
+  }
+
   // ===== 目標達成予測カード（線形回帰） =====
   const fc = regressionForecast();
   if (fc && targetMax) {
@@ -2672,6 +3141,21 @@ function renderAnalysis() {
     </div>`;
   }
 
+  // 体調（記録時の自己申告1〜5）とレディネス（0〜100点を1〜5換算）の推移
+  const wellMap = {};
+  records.forEach(r => { if (r.fatigue != null) (wellMap[r.date] = wellMap[r.date] || {}).fatigue = r.fatigue; });
+  state.readiness.forEach(r => { (wellMap[r.date] = wellMap[r.date] || {}).readiness = +(r.score / 20).toFixed(1); });
+  const wellDates = Object.keys(wellMap).sort();
+  const fatigueSeries = wellDates.map(d => wellMap[d].fatigue ?? null);
+  const readinessSeries = wellDates.map(d => wellMap[d].readiness ?? null);
+  const hasWellness = fatigueSeries.filter(v => v != null).length >= 2 || readinessSeries.filter(v => v != null).length >= 2;
+  if (hasWellness) {
+    html += `<div class="card">
+      <div class="card-title">🩺 体調・レディネス推移</div>
+      <div class="chart-wrap"><canvas id="chart-wellness"></canvas></div>
+      <div style="font-size:12px;color:var(--text2);margin-top:6px">体調＝記録時の自己申告（1〜5）／レディネス＝睡眠・筋肉痛・ストレスの朝チェック（5点満点換算）。低い日が続くときは回復を優先しましょう。</div>
+    </div>`;
+  }
 
   document.getElementById('analysis-content').innerHTML = html;
 
@@ -2786,6 +3270,25 @@ function renderAnalysis() {
     });
   }
 
+  // 体調・レディネスチャート（記録がない日は線をまたいで描画: spanGaps）
+  if (hasWellness) {
+    charts.wellness = new Chart(document.getElementById('chart-wellness'), {
+      type: 'line',
+      data: {
+        labels: wellDates.map(d => fmtDate(d)),
+        datasets: [
+          { ...baseDataset(fatigueSeries, '#4ade80'), label: '体調（記録時）', fill: false, backgroundColor: 'transparent', spanGaps: true },
+          { ...baseDataset(readinessSeries, '#60a5fa'), label: 'レディネス', fill: false, backgroundColor: 'transparent', spanGaps: true },
+        ]
+      },
+      options: {
+        ...chartDefaults,
+        plugins: { legend: { display: true, labels: { color: '#94a3b8', font: { size: 11 } } } },
+        scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0, max: 5 } }
+      }
+    });
+  }
+
 }
 
 // ===== THEORY =====
@@ -2858,6 +3361,7 @@ function renderTheory() {
     <div class="theory-section">
       <h3>📋 主観的コンディション（ウェルネスチェック）</h3>
       <p>ACWRやモノトニーのような客観的な負荷指標だけでなく、<strong>本人の自己申告（体調）</strong>を組み合わせることで判定精度が上がるという考え方（Hooper Indexなどのウェルネス質問票の応用）。数値上は問題なくても本人が「不調」と感じていれば、それも重要なシグナルとして扱う。</p>
+      <p>本アプリはトレーニング当日の朝に<strong>睡眠時間・睡眠の質・筋肉痛・ストレスの「レディネスチェック」</strong>（各25点・計100点）を行い、低い日は当日メニューの微調整（重量-2.5〜5%・セット減）を提案する。簡易ウェルネス質問票はHRV計測に匹敵する回復状態の予測力を持つとされ、特に45歳以上では回復管理が伸びに直結する。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
@@ -2872,7 +3376,7 @@ function renderTheory() {
     <div class="divider"></div>
     <div class="theory-section">
       <h3>🔥 APRE（自動調整式漸進抵抗運動）— AMRAPセット</h3>
-      <p>蓄積期・強化期のボリューム日（月曜）の最終セットは<strong>AMRAP</strong>（できる限りのレップ数）で行う。2025年のネットワークメタ分析で、ベンチプレス1RMの向上効果は<strong>APRE ＞ 速度ベース ＞ RPE法 ＞ 固定%法</strong>の順と報告されており、AMRAPの達成レップに応じて翌週の負荷を自動調整するAPREが最上位。本アプリではAMRAPの結果（レップ数＋RPE）が高信頼データとして達成度評価に流れ、プログラムが自動で追従する。</p>
+      <p>蓄積期・強化期のボリューム日（月曜）の最終セットは<strong>AMRAP</strong>（できる限りのレップ数）で行う。2025年のネットワークメタ分析で、ベンチプレス1RMの向上効果は<strong>APRE ＞ 速度ベース ＞ RPE法 ＞ 固定%法</strong>の順と報告されており、AMRAPの達成レップに応じて翌週の負荷を自動調整するAPREが最上位。本アプリではAMRAPの結果（レップ数＋RPE）が高信頼データとして達成度評価に流れ、さらに<strong>達成レップ数に応じて次のボリューム日の重量を即座に±2.5kg級で自動調整</strong>する（上限6回到達→増量／目標帯→維持／未達→軽減）。±2.5kg以上の実力変動は週次のプログラム再調整（マクロ）が担い、APREはその不感帯を埋めるマイクロ調整として働く。</p>
       <p><strong>やり方:</strong> 完全な限界まで行かず<strong>「限界2〜3回手前（RPE9）」で止める・上限6回</strong>。筋力向上には完全な追い込みは不要（Robinson 2024のメタ回帰：筋力向上と追い込み度の関係は無視できる程度）で、つぶれるリスクと疲労コストだけが増える。フォームが崩れ始めたらそこで終了。</p>
     </div>
     <div class="divider"></div>
@@ -2894,6 +3398,7 @@ function renderTheory() {
         <li><strong>ベンチは量を抜きすぎない：</strong>上半身は下半身よりボリューム削減への感受性が高く、削減30〜50%が最適（&gt;50〜70%削減より好成績）。本プログラムのピーキング日は量を中程度に抑える設計。</li>
         <li><strong>テーパー期間は7〜10日が主流：</strong>北米選手364名の調査で最頻値。量−41〜50%のステップ・テーパー。</li>
         <li><strong>実現（realization）ブロック：</strong>高強度シングル（88→91→94%）に漸増し、試技重量への神経適応とフォーム自動化を図る。</li>
+        <li><strong>本アプリの実装：</strong>MAXテスト週は月曜に「最後の高重量刺激」（85〜87%シングル×3・テスト5日前）、水曜は軽い爆発的挙上のみ（75%×2×2・3日前）とする指数型テーパー。総レップを約50%削減しつつ強度は維持する（Travis 2020）。</li>
       </ul>
     </div>
     <div class="divider"></div>
@@ -2915,7 +3420,7 @@ function renderTheory() {
     <div class="divider"></div>
     <div class="theory-section">
       <h3>📈 MAXテスト計画（試合シミュレーション）</h3>
-      <p>${weeks ? `プログラム${Math.floor(weeks/2)}週目と${weeks}週目` : '6〜8週ごと'}にMAXテスト日を設定。直前のピーキング期で量を削り疲労を抜いてから、試技係数に沿って3本でMAX更新を狙う。コンディション不良なら無理せず延期。</p>
+      <p>${weeks ? `プログラム${Math.floor(weeks/2)}週目と${weeks}週目` : '6〜8週ごと'}にMAXテスト日を設定。MAXテストのある週は（中間テスト週を含めて）月・水が自動的にテーパー構成になり、疲労を抜いてから試技係数に沿って3本でMAX更新を狙う。コンディション不良なら無理せず延期。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
