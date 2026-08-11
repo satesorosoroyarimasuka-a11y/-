@@ -565,6 +565,8 @@ let state = JSON.parse(localStorage.getItem('bp-state') || 'null') || {
 if (!Array.isArray(state.bodyweights)) state.bodyweights = [];
 if (!Array.isArray(state.readiness)) state.readiness = [];
 if (state.profile && state.profile.trainingMax == null) state.profile.trainingMax = state.profile.currentMax;
+// 筋肥大バックオフのダブルプログレッション状態（目標レップ8〜12・到達時の重量オフセット）
+if (!state.hyp) state.hyp = { reps: 8, offsetKg: 0 };
 
 function save() { localStorage.setItem('bp-state', JSON.stringify(state)); }
 
@@ -579,9 +581,12 @@ function round25(x) { return Math.round(x / 2.5) * 2.5; }
 function calcINOL(sets, reps, pct) { return (sets * reps) / Math.max(1, 100 - pct); }
 
 // 1セッションの合計INOL
+// 筋肥大バックオフ(hyp)セットは高重量疲労の管理指標であるINOLから除外する
+// （低%高レップを含めると週INOLが目標帯を超え、高重量ワークセットが誤って削られるため）
 function sessionINOL(session) {
   if (!session || !session.mainSets) return 0;
   return session.mainSets.reduce((a, set) => {
+    if (set.hyp) return a;
     const pct = Math.round(set.weight / session.rm1 * 100);
     return a + calcINOL(1, set.reps, pct);
   }, 0);
@@ -872,12 +877,12 @@ function exportCSV() {
   const today = new Date().toISOString().split('T')[0];
   const BOM = '\uFEFF';
   if (state.records.length) {
-    const rows = [['date','type','phase','week','set_no','weight_kg','reps','rpe','amrap','session_rpe','fatigue','missed','notes'].join(',')];
+    const rows = [['date','type','phase','week','set_no','weight_kg','reps','rpe','amrap','hyp','session_rpe','fatigue','missed','notes'].join(',')];
     state.records.forEach(r => {
       const sess = sessionForRecord(r);
       (r.sets || []).forEach((s, i) => {
         rows.push([r.date, r.type, sess?.phaseName || '', sess?.weekIdx != null ? sess.weekIdx + 1 : '',
-          i + 1, s.weight, s.reps, s.rpe ?? '', s.amrap ? 1 : '', r.rpe || '', r.fatigue ?? '', r.missed ? 1 : '', csvEscape(r.notes)].join(','));
+          i + 1, s.weight, s.reps, s.rpe ?? '', s.amrap ? 1 : '', s.hyp ? 1 : '', r.rpe || '', r.fatigue ?? '', r.missed ? 1 : '', csvEscape(r.notes)].join(','));
       });
     });
     downloadBlob(`benchpress-records-${today}.csv`, BOM + rows.join('\n'), 'text/csv');
@@ -1181,14 +1186,18 @@ function balanceWeeklyINOL(sessions) {
   const volume = sessions.find(s => s.type === 'volume');
   const main = sessions.find(s => s.type === 'main');
 
+  // 筋肥大バックオフ(hyp)は常にワークセット群の後ろに置くため、
+  // 増減の対象は「ワークセット領域」（hypセットが始まる手前まで）に限定する
+  const workEnd = s => { const i = s.mainSets.findIndex(x => x.hyp); return i < 0 ? s.mainSets.length : i; };
+
   let guard = 0;
-  // 不足→ボリューム日にワークセットを追加（最大8セットまで）
-  // AMRAPセットは常に最終セットを保つため、追加はその手前に挿入する
+  // 不足→ボリューム日にワークセットを追加（ワークセット最大8まで）
+  // AMRAPセットは常にワーク領域の最終を保つため、追加はその手前に挿入する
   while (sum() < TARGET_MIN && guard++ < 20) {
-    if (volume && volume.mainSets.length < 8) {
+    if (volume && workEnd(volume) < 8) {
       const base = volume.mainSets[0];
-      const lastIdx = volume.mainSets.length - 1;
-      const insertAt = volume.mainSets[lastIdx].amrap ? lastIdx : volume.mainSets.length;
+      const e = workEnd(volume);
+      const insertAt = volume.mainSets[e - 1]?.amrap ? e - 1 : e;
       volume.mainSets.splice(insertAt, 0, { weight: base.weight, reps: base.reps, note: base.note });
     } else if (main && main.mainSets.length < 7) {
       const base = main.mainSets[0];
@@ -1197,12 +1206,11 @@ function balanceWeeklyINOL(sessions) {
   }
   guard = 0;
   // 過多→ボリューム日のワークセットを削減（最低3セットは維持）
-  // 末尾がAMRAPセットの場合は消さずに1つ手前の通常セットを削る（APREのテストセットを保護）
+  // ワーク領域末尾がAMRAPの場合は消さずに1つ手前の通常セットを削る（APREのテストセットを保護）
   while (sum() > TARGET_MAX && guard++ < 20) {
-    if (volume && volume.mainSets.length > 3) {
-      const lastIdx = volume.mainSets.length - 1;
-      if (volume.mainSets[lastIdx].amrap) volume.mainSets.splice(lastIdx - 1, 1);
-      else volume.mainSets.pop();
+    if (volume && workEnd(volume) > 3) {
+      const e = workEnd(volume);
+      volume.mainSets.splice(volume.mainSets[e - 1]?.amrap ? e - 2 : e - 1, 1);
     } else if (main && main.mainSets.length > 3) {
       main.mainSets.splice(main.mainSets.length - 2, 1);
     } else break;
@@ -1328,6 +1336,17 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
       const last = mainSets[mainSets.length - 1];
       last.amrap = true;
       last.note = '🔥 AMRAP: 限界2〜3回手前(RPE9)まで・上限6回';
+      // 筋肥大バックオフ: 高重量ワーク＋AMRAPの後に67.5%×8〜12回を追加（蓄積2・強化1セット）。
+      // 筋力は少数の高重量セットで頭打ちになる一方、筋肥大はボリュームに比例して伸びる
+      // （Pelland 2024メタ回帰）。低%は疲労コストが小さく、長期の筋力の伸びしろ（筋量）を作る。
+      // 重量・目標レップはダブルプログレッション状態(state.hyp)から生成時に反映する
+      const hyp = state.hyp || { reps: 8, offsetKg: 0 };
+      const hypW = pctWeight(rm1, 67.5) + hyp.offsetKg;
+      const hypN = phaseName === 'accumulation' ? 2 : 1;
+      for (let i = 0; i < hypN; i++) {
+        mainSets.push({ weight: hypW, reps: hyp.reps, hyp: true,
+          note: '💪 筋肥大バックオフ・限界2回手前まで' });
+      }
     }
   }
 
@@ -1482,7 +1501,7 @@ function renderProgram() {
       const done = state.completedSessions[s.date + s.type];
       const rm = state.program.sessions.find(x => x.date === s.date && x.type === s.type)?.rm1 || '-';
       const mainPct = s.mainSets[0] ? Math.round(s.mainSets[0].weight / rm * 100) : 0;
-      const sessionInol = s.mainSets.reduce((acc, set) => acc + calcINOL(1, set.reps, Math.round(set.weight / rm * 100)), 0).toFixed(2);
+      const sessionInol = sessionINOL(s).toFixed(2);  // hypセット除外の共通計算に統一
 
       html += `<div class="session-row" onclick="openSession('${s.date}','${s.type}')">
         <div class="session-top">
@@ -1495,7 +1514,7 @@ function renderProgram() {
             ${done ? '<div style="color:var(--green);font-size:12px;margin-top:4px">✓ 完了</div>' : ''}
           </div>
         </div>
-        <div class="sets-preview">INOL ${sessionInol} | 計画1RM ${rm}kg | ${s.mainSets.length}セット${s.apreAdjust ? ' | 🔥APRE調整' : ''}</div>
+        <div class="sets-preview">INOL ${sessionInol} | 計画1RM ${rm}kg | ${s.mainSets.length}セット${(n => n ? ` | 💪肥大×${n}` : '')(s.mainSets.filter(x => x.hyp).length)}${s.apreAdjust ? ' | 🔥APRE調整' : ''}</div>
       </div>`;
     });
     html += '</div>';
@@ -1592,10 +1611,7 @@ function renderTraining(session) {
 
   // INOL info
   if (!session.isMaxDay) {
-    const totalINOL = session.mainSets.reduce((acc, set) => {
-      const pct = Math.round(set.weight / session.rm1 * 100);
-      return acc + calcINOL(1, set.reps, pct);
-    }, 0);
+    const totalINOL = sessionINOL(session);
     const inolColor = totalINOL < 0.8 ? '#94a3b8' : totalINOL <= 2.0 ? '#22c55e' : totalINOL <= 3.0 ? '#f59e0b' : '#ef4444';
     const inolPct = Math.min(100, (totalINOL / 3.0) * 100);
     html += `<div class="card">
@@ -1669,12 +1685,18 @@ function renderTraining(session) {
   session.mainSets.forEach((set, i) => {
     const pct = Math.round(set.weight / session.rm1 * 100);
     const loggedSet = logged?.sets?.[i];
-    const prevSet = prevRecord?.sets?.[i];
-    html += `<div class="set-row" id="mainset-${i}" ${set.isTarget ? 'style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3)"' : set.amrap ? 'style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3)"' : ''}>
-      <div class="set-num" style="${set.isTarget ? 'color:var(--yellow)' : set.amrap ? 'color:var(--red)' : ''}">${i+1}</div>
+    // フェーズ跨ぎでhypセット本数が変わると前回記録とインデックスがずれるため、種別一致時のみ比較表示
+    const rawPrev = prevRecord?.sets?.[i];
+    const prevSet = (rawPrev && !!rawPrev.hyp === !!set.hyp) ? rawPrev : null;
+    const rowStyle = set.isTarget ? 'style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3)"'
+      : set.amrap ? 'style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3)"'
+      : set.hyp ? 'style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3)"' : '';
+    const numStyle = set.isTarget ? 'color:var(--yellow)' : set.amrap ? 'color:var(--red)' : set.hyp ? 'color:var(--green)' : '';
+    html += `<div class="set-row" id="mainset-${i}" ${rowStyle}>
+      <div class="set-num" style="${numStyle}">${i+1}</div>
       <div class="set-info">
-        <div class="set-weight" style="${set.isTarget ? 'color:var(--yellow)' : set.amrap ? 'color:var(--red)' : ''}">${set.weight}kg</div>
-        <div class="set-reps">${set.amrap ? `${set.reps}rep以上を目標` : `${set.reps}rep`} · ${pct}% ${set.note ? '— ' + set.note : ''}</div>
+        <div class="set-weight" style="${numStyle}">${set.weight}kg</div>
+        <div class="set-reps">${set.amrap ? `${set.reps}rep以上を目標` : set.hyp ? `目標${set.reps}rep（8〜12）` : `${set.reps}rep`} · ${pct}% ${set.note ? '— ' + set.note : ''}</div>
         ${prevSet ? `<div style="font-size:12px;color:var(--text2);margin-top:2px">前回: ${prevSet.weight}kg × ${prevSet.reps}rep</div>` : ''}
         ${loggedSet ? `<div style="font-size:12px;color:var(--green);margin-top:2px">記録: ${loggedSet.weight}kg × ${loggedSet.reps}rep</div>` : ''}
       </div>
@@ -1706,7 +1728,9 @@ function toggleSet(idx) {
     restCheckTimestamps.push(Date.now());
     const s = state.currentSession;
     const heavy = s && (s.isMaxDay || s.phaseName === 'peaking' || s.type === 'main' || (s.taperWeek && s.type === 'volume'));
-    startRest(heavy ? 240 : (s?.phaseName === 'deload' ? 120 : 180));
+    // 筋肥大バックオフは低%高レップなので休憩は短め(2分)で十分
+    const isHyp = s?.mainSets?.[idx]?.hyp;
+    startRest(isHyp ? 120 : heavy ? 240 : (s?.phaseName === 'deload' ? 120 : 180));
   }
 }
 
@@ -1740,8 +1764,11 @@ function openLogModal() {
     if (set.amrap) {
       html += `<div style="font-size:12px;color:var(--red);margin:4px 0 2px">🔥 AMRAPセット: 実際にできたレップ数を正確に入力してください（翌週の負荷自動調整に使われます）</div>`;
     }
+    if (set.hyp) {
+      html += `<div style="font-size:12px;color:var(--green);margin:4px 0 2px">💪 筋肥大セット: 8〜12回で限界2回手前まで。全セット12回到達で次回+2.5kg</div>`;
+    }
     html += `<div class="log-input-row">
-      <div style="font-size:14px;font-weight:600;width:20px">${set.amrap ? '🔥' : i+1}</div>
+      <div style="font-size:14px;font-weight:600;width:20px">${set.amrap ? '🔥' : set.hyp ? '💪' : i+1}</div>
       <input type="number" id="log-w-${i}" placeholder="${set.weight}" value="${ex.weight || ''}" step="2.5" style="font-size:14px">
       <span style="color:var(--text2)">kg ×</span>
       <input type="number" id="log-r-${i}" placeholder="${set.reps}" value="${ex.reps || ''}" style="font-size:14px">
@@ -1803,9 +1830,11 @@ function saveLog() {
       rpe: rpeEl ? +rpeEl.dataset.val : null,
     };
     if (set.amrap) logged.amrap = true; // APREのAMRAPセットは達成度評価の対象として印を引き継ぐ
+    if (set.hyp) logged.hyp = true;     // 筋肥大バックオフはダブルプログレッション判定に使う
     // 未達成検知: 計画より軽い重量 or 少ないレップ = そのセットで限界に達したとみなす。
     // AMRAPセットは「できるだけ多く」が計画なので未達判定の対象外。
-    if (!set.amrap && (logged.weight < set.weight || logged.reps < set.reps)) {
+    // hypセットも8〜12回のレンジ内で変動するのが正常なので対象外（未達＝つぶれではない）。
+    if (!set.amrap && !set.hyp && (logged.weight < set.weight || logged.reps < set.reps)) {
       missed = true;
       // 未達＝限界到達の定義なので、RPE未入力なら10として扱う（noRpeスキップで調整が漏れるのを防ぐ）
       if (logged.rpe == null) logged.rpe = 10;
@@ -1833,6 +1862,9 @@ function saveLog() {
   state.records.sort((a,b) => a.date.localeCompare(b.date));
   // 基準1RM(trainingMax)はMAXテスト日の記録でのみ静かに更新する
   maybeUpdateTrainingMax(newRec, s);
+  // 筋肥大バックオフのダブルプログレッションを更新し、将来のvolume日へ反映。
+  // planRecalibrationの再構築(buildSessionがstate.hypを読む)より前に行う必要がある
+  if (sets.some(x => x.hyp)) { recomputeHypState(); syncFutureHypSessions(s.date); }
   save();
 
   closeLogModal();
@@ -2025,6 +2057,43 @@ function confirmAndApply(plan) {
 
 // ===== APRE即時自動調整（マイクロ調整） =====
 // AMRAPの達成レップ数に応じて「次のボリューム日のセット重量」を即座に±調整する
+// ===== 筋肥大バックオフのダブルプログレッション =====
+// 8回スタート→全セットで目標達成なら翌回+1回→全セット12回到達で+2.5kg＆8回にリセット。
+// state.hypは増分更新ではなく全記録からのreplayで再導出する（同じ記録の再保存や
+// 過去記録の修正でも二重加算されない冪等な方式）
+function recomputeHypState() {
+  const hyp = { reps: 8, offsetKg: 0 };
+  [...state.records].sort((a, b) => a.date.localeCompare(b.date)).forEach(r => {
+    const hs = (r.sets || []).filter(s => s.hyp && s.reps);
+    if (!hs.length) return;
+    const m = Math.min(...hs.map(s => s.reps));
+    if (m >= 12) { hyp.offsetKg += 2.5; hyp.reps = 8; }
+    else if (m >= hyp.reps) hyp.reps = Math.min(12, m + 1);
+  });
+  state.hyp = hyp;
+}
+
+// 更新されたダブルプログレッションを未実施の将来volume日に反映する
+// （APREのターゲット選定と同じフィルタ。テーパー週・記録済み・完了済みは対象外）
+function syncFutureHypSessions(afterDate) {
+  if (!state.program) return;
+  state.program.sessions.forEach(s => {
+    if (s.type !== 'volume' || s.date <= afterDate || s.taperWeek) return;
+    if (s.phaseName !== 'accumulation' && s.phaseName !== 'intensification') return;
+    if (state.completedSessions[s.date + s.type]) return;
+    if (state.records.some(r => r.key === s.date + '_' + s.type)) return;
+    let touched = false;
+    s.mainSets.forEach(set => {
+      if (!set.hyp) return;
+      set.w0 = pctWeight(s.rm1, 67.5) + state.hyp.offsetKg;
+      set.reps = state.hyp.reps;
+      set.note = '💪 筋肥大バックオフ・限界2回手前まで';
+      touched = true;
+    });
+    if (touched) recalcSetWeights(s); // レディネス%再適用・APREはhyp対象外
+  });
+}
+
 // 本来のAPREテーブル方式。planRecalibrationとの責務分離:
 //   - planRecalibration(マクロ): 計画1RM(rm1)と期間全体を再構築。乖離±2.5kg以上でconfirm提案
 //   - planApreAdjust(マイクロ): 次のvolume日のセット重量のみ(rm1は不変)
@@ -2339,7 +2408,9 @@ function recalcSetWeights(session) {
   const pct = session.readinessAdjust ? session.readinessAdjust.pct : 0;
   session.mainSets.forEach(set => {
     if (set.w0 == null) set.w0 = set.weight;
-    set.weight = round25((set.w0 + delta) * (1 + pct / 100));
+    // 筋肥大バックオフはAPRE(高重量の達成度)の調整対象外。レディネス%は全セットに適用
+    const d = set.hyp ? 0 : delta;
+    set.weight = round25((set.w0 + d) * (1 + pct / 100));
   });
 }
 
@@ -2380,10 +2451,14 @@ function applyReadinessAdjust() {
   const sug = readinessSuggestion(rd.score, s);
   if (!sug || sug.pct == null) return;
   const removed = [];
-  // セット減はAMRAP直前の通常セットを削る（APREのテストセットは保護）
+  // セット減は筋肥大バックオフを最優先で削る（回復コスト減が目的で、高重量の特異性は守る）。
+  // hypが無ければAMRAP直前の通常セットを削る（APREのテストセットは保護）
   if (sug.dropSet && s.mainSets.length > 2) {
     const lastIdx = s.mainSets.length - 1;
-    const cutIdx = s.mainSets[lastIdx].amrap ? lastIdx - 1 : lastIdx;
+    let cutIdx;
+    if (s.mainSets[lastIdx].hyp) cutIdx = lastIdx;
+    else if (s.mainSets[lastIdx].amrap) cutIdx = lastIdx - 1;
+    else cutIdx = lastIdx;
     if (cutIdx > 0) removed.push({ set: s.mainSets.splice(cutIdx, 1)[0], idx: cutIdx });
   }
   s.readinessAdjust = { pct: sug.pct, dropSet: !!removed.length, removedSets: removed, sourceDate: today };
@@ -2887,6 +2962,7 @@ function renderAnalysis() {
     const sess = state.program?.sessions.find(s => s.date === r.date && s.type === r.type);
     const rm = sess ? sess.rm1 : Math.max(...r.sets.map(s => epley(s.weight, s.reps)));
     return +r.sets.reduce((a,s) => {
+      if (s.hyp) return a; // 筋肥大バックオフは高重量疲労指標INOLから除外（計画側と同基準）
       const pct = Math.round(s.weight / rm * 100);
       return a + calcINOL(1, s.reps, pct);
     }, 0).toFixed(2);
@@ -3378,6 +3454,12 @@ function renderTheory() {
       <h3>🔥 APRE（自動調整式漸進抵抗運動）— AMRAPセット</h3>
       <p>蓄積期・強化期のボリューム日（月曜）の最終セットは<strong>AMRAP</strong>（できる限りのレップ数）で行う。2025年のネットワークメタ分析で、ベンチプレス1RMの向上効果は<strong>APRE ＞ 速度ベース ＞ RPE法 ＞ 固定%法</strong>の順と報告されており、AMRAPの達成レップに応じて翌週の負荷を自動調整するAPREが最上位。本アプリではAMRAPの結果（レップ数＋RPE）が高信頼データとして達成度評価に流れ、さらに<strong>達成レップ数に応じて次のボリューム日の重量を即座に±2.5kg級で自動調整</strong>する（上限6回到達→増量／目標帯→維持／未達→軽減）。±2.5kg以上の実力変動は週次のプログラム再調整（マクロ）が担い、APREはその不感帯を埋めるマイクロ調整として働く。</p>
       <p><strong>やり方:</strong> 完全な限界まで行かず<strong>「限界2〜3回手前（RPE9）」で止める・上限6回</strong>。筋力向上には完全な追い込みは不要（Robinson 2024のメタ回帰：筋力向上と追い込み度の関係は無視できる程度）で、つぶれるリスクと疲労コストだけが増える。フォームが崩れ始めたらそこで終了。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
+      <h3>💪 筋肥大バックオフセット（ダブルプログレッション）</h3>
+      <p>蓄積期・強化期のボリューム日（月曜）は、高重量ワーク＋AMRAPの後に<strong>67.5%×8〜12回</strong>の軽量バックオフを追加する（蓄積期2セット・強化期1セット）。Pelland 2024の大規模メタ回帰（67研究）によれば、<strong>筋力は少数の高重量セットで効果の大半が得られて頭打ちになる</strong>一方、<strong>筋肥大はボリュームに比例して伸び続ける</strong>。また筋肥大効果は30〜85%のどの重量帯でも同等（Schoenfeld 2021）。つまり1RM向上に必須の80%以上の高重量はそのままに、疲労コストの小さい軽量高レップで筋肥大ボリュームを上乗せするのが最も効率的で、筋量の増加が中長期の筋力の伸びしろ（天井）を引き上げる。</p>
+      <p><strong>進め方（ダブルプログレッション）:</strong> 目標8回からスタートし、全セットで目標を達成すると翌回の目標が+1回。<strong>全セット12回に到達すると重量+2.5kgされ目標8回にリセット</strong>される（記録から自動判定）。限界2回手前で止めてよい。現在の目標: <strong>${state.hyp ? `${state.hyp.reps}回 / 重量オフセット+${state.hyp.offsetKg}kg` : '8回'}</strong>。ピーキング・テーパー・ディロード週は疲労管理のため行わない。INOL（高重量疲労指標）にはこのセットは含めない。※生成済みの既存プログラムには、再生成またはプログラム再調整の承認時から反映される。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
