@@ -1200,7 +1200,8 @@ function balanceWeeklyINOL(sessions) {
       const insertAt = volume.mainSets[e - 1]?.amrap ? e - 1 : e;
       volume.mainSets.splice(insertAt, 0, { weight: base.weight, reps: base.reps, note: base.note });
     } else if (main && main.mainSets.length < 7) {
-      const base = main.mainSets[0];
+      // トップシングル(top)は複製せず、最初の通常ワークセットを増やす
+      const base = main.mainSets.find(x => !x.top) || main.mainSets[0];
       main.mainSets.splice(main.mainSets.length - 1, 0, { weight: base.weight, reps: base.reps, note: base.note });
     } else break;
   }
@@ -1371,8 +1372,8 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
   if (type === 'main') {
     // メインは高強度シングル/ダブル中心で最大筋力・神経系を強化
     let pct, sets, reps;
-    if (phaseName === 'accumulation') { pct = 86; sets = 4; reps = 2; }
-    else if (phaseName === 'intensification') { pct = 90; sets = 5; reps = 1; }
+    if (phaseName === 'accumulation') { pct = 86; sets = 3; reps = 2; }
+    else if (phaseName === 'intensification') { pct = 90; sets = 4; reps = 1; }
     else { pct = 72; sets = 3; reps = 2; }
 
     // ラックアップ（重量慣れ）— テーパー週は神経系を疲労させないため省略
@@ -1394,6 +1395,13 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
       mainSets.push({ weight: pctWeight(rm1, 85), reps: 1, note: '🎙️ コマンド練習', commands: true });
       mainSets.push({ weight: pctWeight(rm1, 90), reps: 1, note: '🎙️ オープナー確認（これで終了）', commands: true });
     } else {
+      // トップシングル: その日の最高重量1本（蓄積90%・強化95%）。
+      // 1RM向上は挙上重量への特異性が最重要で、90%超に毎週触れることで
+      // 神経系の出力（運動単位の動員・発火頻度）と重量慣れを維持する。
+      // 1本のみなので疲労コストは最小。代わりにワークセットを1本減らしINOLをほぼ中立に保つ
+      const topPct = phaseName === 'accumulation' ? 90 : 95;
+      mainSets.push({ weight: pctWeight(rm1, topPct), reps: 1, top: true,
+        note: '⚡ トップシングル・限界1〜2回手前(RPE8〜9)で確実に' });
       for (let i = 0; i < sets; i++) {
         mainSets.push({ weight: pctWeight(rm1, pct), reps, note: '' });
       }
@@ -1690,8 +1698,9 @@ function renderTraining(session) {
     const prevSet = (rawPrev && !!rawPrev.hyp === !!set.hyp) ? rawPrev : null;
     const rowStyle = set.isTarget ? 'style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3)"'
       : set.amrap ? 'style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3)"'
-      : set.hyp ? 'style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3)"' : '';
-    const numStyle = set.isTarget ? 'color:var(--yellow)' : set.amrap ? 'color:var(--red)' : set.hyp ? 'color:var(--green)' : '';
+      : set.hyp ? 'style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3)"'
+      : set.top ? 'style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.35)"' : '';
+    const numStyle = set.isTarget ? 'color:var(--yellow)' : set.amrap ? 'color:var(--red)' : set.hyp ? 'color:var(--green)' : set.top ? 'color:var(--accent2)' : '';
     html += `<div class="set-row" id="mainset-${i}" ${rowStyle}>
       <div class="set-num" style="${numStyle}">${i+1}</div>
       <div class="set-info">
@@ -1767,8 +1776,11 @@ function openLogModal() {
     if (set.hyp) {
       html += `<div style="font-size:12px;color:var(--green);margin:4px 0 2px">💪 筋肥大セット: 8〜12回で限界2回手前まで。全セット12回到達で次回+2.5kg</div>`;
     }
+    if (set.top) {
+      html += `<div style="font-size:12px;color:var(--accent2);margin:4px 0 2px">⚡ トップシングル: RPEを必ず入力してください（実力推定・自動調整の最重要データです）</div>`;
+    }
     html += `<div class="log-input-row">
-      <div style="font-size:14px;font-weight:600;width:20px">${set.amrap ? '🔥' : set.hyp ? '💪' : i+1}</div>
+      <div style="font-size:14px;font-weight:600;width:20px">${set.amrap ? '🔥' : set.hyp ? '💪' : set.top ? '⚡' : i+1}</div>
       <input type="number" id="log-w-${i}" placeholder="${set.weight}" value="${ex.weight || ''}" step="2.5" style="font-size:14px">
       <span style="color:var(--text2)">kg ×</span>
       <input type="number" id="log-r-${i}" placeholder="${set.reps}" value="${ex.reps || ''}" style="font-size:14px">
@@ -3447,7 +3459,7 @@ function renderTheory() {
     <div class="divider"></div>
     <div class="theory-section">
       <h3>⚡ 高重量・低レップによる神経系強化</h3>
-      <p>本プログラムは<strong>高重量×低レップ（メイン/テクニック日は1〜3回、ボリューム日は1〜5回）</strong>を中心に構成。85〜90%超の高強度シングル/ダブルは、運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。レップを抑えることで1セットあたりの疲労を最小化し、フォームの質を保ったまま高強度の反復回数を稼ぐ（量はセット数で確保）。テクニック日のポーズ＋爆発的挙上はRFD（力の立ち上がり速度）を改善する。</p>
+      <p>本プログラムは<strong>高重量×低レップ（メイン/テクニック日は1〜3回、ボリューム日は1〜5回）</strong>を中心に構成。85〜90%超の高強度シングル/ダブルは、運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。さらに土曜メイン日の冒頭には<strong>⚡ トップシングル（蓄積期90%→強化期95%×1本）</strong>を置き、毎週90%超の重量に触れることで神経系の出力と「重さ慣れ」を維持する。1RM向上は挙上重量への特異性が最も重要であり、ボリューム（筋持久力・筋量）だけでは最大重量は伸びない。トップシングルは限界1〜2回手前（RPE8〜9）で確実に挙げること — 1本だけなので疲労コストは最小で、代わりにワークセットを1本減らして週の総負荷（INOL）は中立に保っている。レップを抑えることで1セットあたりの疲労を最小化し、フォームの質を保ったまま高強度の反復回数を稼ぐ（量はセット数で確保）。テクニック日のポーズ＋爆発的挙上はRFD（力の立ち上がり速度）を改善する。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
