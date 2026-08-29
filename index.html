@@ -577,8 +577,9 @@ function fmtDate(d) {
   return `${dt.getMonth()+1}/${dt.getDate()}(${DAYS[dt.getDay()]})`;
 }
 function round25(x) { return Math.round(x / 2.5) * 2.5; }
-// INOL = レップ数 / (100 - %1RM)。%が100以上になる場合は分母をクランプしてゼロ除算・負数を防ぐ
-function calcINOL(sets, reps, pct) { return (sets * reps) / Math.max(1, 100 - pct); }
+// INOL = レップ数 / (100 - %1RM)。97.5%超は分母をクランプ（100%付近で式が退化し
+// 1本のINOLが爆発的に大きくなるのを防ぐ。INOLの適用域は概ね97.5%まで）
+function calcINOL(sets, reps, pct) { return (sets * reps) / Math.max(2.5, 100 - pct); }
 
 // 1セッションの合計INOL
 // 筋肥大バックオフ(hyp)セットは高重量疲労の管理指標であるINOLから除外する
@@ -1134,7 +1135,7 @@ function programPhase(totalWeeks, weekIdx) {
 // MAXテスト日（試合シミュレーション）を行う週か判定
 function isMaxWeek(totalWeeks, weekIdx) {
   if (weekIdx === totalWeeks - 1) return true;            // 最終週は必ず実施（目標達成の本番）
-  if (totalWeeks >= 14 && weekIdx === Math.floor(totalWeeks / 2)) return true; // 長期は中間で進捗確認
+  if (totalWeeks >= 10 && weekIdx === Math.floor(totalWeeks / 2)) return true; // 中盤に本気のMAX更新機会を作る
   return false;
 }
 
@@ -1180,7 +1181,7 @@ function buildProgramSessions(profile, rmForWeek) {
     const tech = buildSession(wedDate, 'technique', weekRM, phase, w, isDeload, false, taperWeek, phasePos);
     const main = buildSession(satDate, 'main', weekRM, phase, w, isDeload, isMaxDay, false, phasePos);
 
-    // 週あたりINOLを目標2.0〜2.8に調整（蓄積・強化期のみ。ピーキング/テーパーは意図的に低負荷）
+    // 週あたり高重量INOLを目標1.2〜2.0に調整（蓄積・強化期のみ。ピーキング/テーパーは意図的に低負荷）
     // MAXテスト日は3本勝負の固定構成のため対象外（自動調整で試技が重複挿入されるバグを回避）
     if ((phase.name === 'accumulation' || phase.name === 'intensification') && !isMaxDay) {
       balanceWeeklyINOL([vol, tech, main]);
@@ -1193,42 +1194,41 @@ function buildProgramSessions(profile, rmForWeek) {
   return program;
 }
 
-// 週あたりの合計INOLが2.0〜2.8に収まるよう、ボリューム/メイン日のセット数を増減
+// 週あたりの高重量INOLが1.2〜2.0に収まるよう、水曜(5レップ)/土曜(シングル)のセット数を増減
+// 月曜筋肥大日は全セットhyp(INOL対象外)のため調整対象にしない
 function balanceWeeklyINOL(sessions) {
-  const TARGET_MIN = 2.0, TARGET_MAX = 2.8;
+  const TARGET_MIN = 1.2, TARGET_MAX = 2.0;
   const sum = () => sessions.reduce((a, s) => a + sessionINOL(s), 0);
-  // メインセットの末尾(通常のワークセット)を複製/削除して微調整
-  const volume = sessions.find(s => s.type === 'volume');
-  const main = sessions.find(s => s.type === 'main');
-
-  // 筋肥大バックオフ(hyp)は常にワークセット群の後ろに置くため、
-  // 増減の対象は「ワークセット領域」（hypセットが始まる手前まで）に限定する
-  const workEnd = s => { const i = s.mainSets.findIndex(x => x.hyp); return i < 0 ? s.mainSets.length : i; };
+  const wed = sessions.find(s => s.type === 'technique');
+  const sat = sessions.find(s => s.type === 'main');
+  // 土曜のワークシングル（トップシングルとバックオフを除く）
+  const satWorkIdxs = () => sat ? sat.mainSets.map((x, i) => (!x.top && !x.back) ? i : -1).filter(i => i >= 0) : [];
 
   let guard = 0;
-  // 不足→ボリューム日にワークセットを追加（ワークセット最大8まで）
-  // AMRAPセットは常にワーク領域の最終を保つため、追加はその手前に挿入する
+  // 不足→水曜にワークセット追加(最大5)、次いで土曜にワークシングル追加(最大5本)
+  // AMRAP/トップシングル/バックオフの位置と本数は保つ
   while (sum() < TARGET_MIN && guard++ < 20) {
-    if (volume && workEnd(volume) < 8) {
-      const base = volume.mainSets[0];
-      const e = workEnd(volume);
-      const insertAt = volume.mainSets[e - 1]?.amrap ? e - 1 : e;
-      volume.mainSets.splice(insertAt, 0, { weight: base.weight, reps: base.reps, note: base.note });
-    } else if (main && main.mainSets.length < 7) {
-      // トップシングル(top)は複製せず、最初の通常ワークセットを増やす
-      const base = main.mainSets.find(x => !x.top) || main.mainSets[0];
-      main.mainSets.splice(main.mainSets.length - 1, 0, { weight: base.weight, reps: base.reps, note: base.note });
+    if (wed && wed.mainSets.length < 5) {
+      const base = wed.mainSets[0];
+      const lastIdx = wed.mainSets.length - 1;
+      const insertAt = wed.mainSets[lastIdx]?.amrap ? lastIdx : wed.mainSets.length;
+      wed.mainSets.splice(insertAt, 0, { weight: base.weight, reps: base.reps, note: base.note });
+    } else if (sat && satWorkIdxs().length < 5) {
+      const idxs = satWorkIdxs();
+      if (!idxs.length) break;
+      const base = sat.mainSets[idxs[0]];
+      sat.mainSets.splice(idxs[idxs.length - 1] + 1, 0, { weight: base.weight, reps: base.reps, note: base.note });
     } else break;
   }
   guard = 0;
-  // 過多→ボリューム日のワークセットを削減（最低3セットは維持）
-  // ワーク領域末尾がAMRAPの場合は消さずに1つ手前の通常セットを削る（APREのテストセットを保護）
+  // 過多→最も疲労コストの高い土曜のワークシングルから削減(最低3本)、次いで水曜(最低3セット)
   while (sum() > TARGET_MAX && guard++ < 20) {
-    if (volume && workEnd(volume) > 3) {
-      const e = workEnd(volume);
-      volume.mainSets.splice(volume.mainSets[e - 1]?.amrap ? e - 2 : e - 1, 1);
-    } else if (main && main.mainSets.length > 3) {
-      main.mainSets.splice(main.mainSets.length - 2, 1);
+    const idxs = satWorkIdxs();
+    if (sat && idxs.length > 3) {
+      sat.mainSets.splice(idxs[idxs.length - 1], 1);
+    } else if (wed && wed.mainSets.length > 3) {
+      const lastIdx = wed.mainSets.length - 1;
+      wed.mainSets.splice(wed.mainSets[lastIdx]?.amrap ? lastIdx - 1 : lastIdx, 1);
     } else break;
   }
 }
@@ -1275,7 +1275,7 @@ function validateAndOptimize() {
     report.infos.push(`週平均+${neededPerWeek.toFixed(1)}kg増は、あなたの実力レベル${p.age >= 45 ? '・年齢' : ''}に対して科学的に現実的なペース（目安 週+${rate.toFixed(1)}kg）です。`);
   }
 
-  // 週あたりINOLチェック（蓄積・強化期の目標 2.0〜2.8）
+  // 週あたり高重量INOLチェック（蓄積・強化期の目標 1.2〜2.0。月曜筋肥大日は対象外）
   if (state.program) {
     const wmap = weeklyINOLMap();
     // 週ごとのセッション数（完全な週=3セッションのみ評価対象）
@@ -1291,8 +1291,8 @@ function validateAndOptimize() {
     const vals = buildWeeks.map(w => wmap[w]).filter(v => v != null);
     if (vals.length) {
       const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-      const out = vals.filter(v => v < 2.0 || v > 2.8).length;
-      report.infos.push(`週あたりINOLは平均${avg.toFixed(1)}（目標2.0〜2.8）${out === 0 ? '。最適な負荷量です。' : '。'}`);
+      const out = vals.filter(v => v < 1.2 || v > 2.0).length;
+      report.infos.push(`週あたり高重量INOLは平均${avg.toFixed(1)}（目標1.2〜2.0・筋肥大日除く）${out === 0 ? '。最適な負荷量です。' : '。'}`);
     }
   }
 
@@ -1314,7 +1314,7 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
   if (isMaxDay) {
     // MAXテスト日（試合シミュレーション）— 競技の試技係数に基づく3本勝負
     // 第1試技0.90 / 第2試技0.97 / 第3試技1.025（ベンチプレスの標準係数）
-    // アップは各自で実施。記録は試技のみ。すべてポーズ＋コマンドで競技と同条件に
+    // アップは各自で実施。記録は試技のみ
     mainSets = [
       { weight: pctWeight(rm1, 90), reps: 1, note: '🎙️ 第1試技（確実に・自信構築）', commands: true },
       { weight: pctWeight(rm1, 97), reps: 1, note: '🎙️ 第2試技（バー速度で判断）', commands: true },
@@ -1325,9 +1325,8 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
   }
 
   if (type === 'volume') {
-    // 高重量・低レップ志向（神経系強化）。量はINOL自動調整でセット数を確保
-    // レップレンジは1〜5。蓄積期を最大の5レップにし、強化期→ピーキングへと
-    // 強度が上がるにつれレップを減らす（周期化の一貫性を保つ）
+    // DUP構成の筋肥大日: 70〜77.5%×8〜10レップでボリュームを稼ぐ。
+    // 高重量刺激は水曜(5レップ)と土曜(シングル)が担い、この日は筋量=長期の伸びしろを作る
     let pct, sets, reps, note = '';
     if (taperWeek) {
       // テーパー週(MAXテスト週)の月曜＝テスト5日前: 最後の高重量刺激。
@@ -1336,8 +1335,8 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
       pct = (state.profile?.age >= 45) ? 85 : 87; sets = 3; reps = 1;
       note = '⚡ 最後の高重量刺激（テーパー）— これ以降は疲労を抜く';
     }
-    else if (phaseName === 'accumulation') { pct = 77.5 + wave; sets = 5; reps = 5; }
-    else if (phaseName === 'intensification') { pct = 82.5 + wave; sets = 5; reps = 3; }
+    else if (phaseName === 'accumulation') { pct = 70 + wave; sets = 4; reps = 8; }
+    else if (phaseName === 'intensification') { pct = 72.5 + wave; sets = 3; reps = 8; }
     else if (phaseName === 'peaking') { pct = 82; sets = 3; reps = 2; }
     // ディロードは45歳以上でより深く落とす（マスターズは回復微週の強度減を10〜15%と大きめに取る）
     else { /* deload=回復微週 */ pct = (state.profile?.age >= 45) ? 65 : 70; sets = 2; reps = 3; note = '軽め・疲労抜き'; }
@@ -1345,52 +1344,51 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
     for (let i = 0; i < sets; i++) {
       mainSets.push({ weight: pctWeight(rm1, pct), reps, note });
     }
-    // APRE(自動調整式漸進抵抗運動): 蓄積期・強化期のみ、最終セットをAMRAPにする。
-    // 2025年のネットワークメタ分析でベンチプレス1RM向上に最も効果的とされた方式。
-    // 「限界2〜3回手前(RPE9)」で止める(筋力向上に完全な追い込みは不要: Robinson 2024)。
-    // 達成レップ＋RPEが毎週の高信頼データ源となり、達成度評価とAPRE即時調整で負荷が自動追従する。
-    // ピーキング/ディロードに加え、テーパー週（中間MAX週が蓄積/強化フェーズのままの場合を含む）
-    // もテーパー保護のため実施しない。
+    // 蓄積・強化期は全セットを筋肥大セット化（ダブルプログレッション8→10回、
+    // 全セット10回到達で+2.5kg＆8回リセット）。筋肥大はボリュームに比例して伸び
+    // （Pelland 2024メタ回帰）、筋量の増加が中長期の筋力の天井を引き上げる。
+    // AMRAP(APREアンカー)は水曜5レップ日に移設済み。
     if (!taperWeek && (phaseName === 'accumulation' || phaseName === 'intensification')) {
-      const last = mainSets[mainSets.length - 1];
-      last.amrap = true;
-      last.note = '🔥 AMRAP: 限界2〜3回手前(RPE9)まで・上限6回';
-      // 筋肥大バックオフ: 高重量ワーク＋AMRAPの後に67.5%×8〜12回を追加（蓄積2・強化1セット）。
-      // 筋力は少数の高重量セットで頭打ちになる一方、筋肥大はボリュームに比例して伸びる
-      // （Pelland 2024メタ回帰）。低%は疲労コストが小さく、長期の筋力の伸びしろ（筋量）を作る。
-      // 重量・目標レップはダブルプログレッション状態(state.hyp)から生成時に反映する
       const hyp = state.hyp || { reps: 8, offsetKg: 0 };
-      const hypW = pctWeight(rm1, 67.5) + hyp.offsetKg;
-      const hypN = phaseName === 'accumulation' ? 2 : 1;
-      for (let i = 0; i < hypN; i++) {
-        mainSets.push({ weight: hypW, reps: hyp.reps, hyp: true,
-          note: '💪 筋肥大バックオフ・限界2回手前まで' });
-      }
+      mainSets.forEach(set => {
+        set.hyp = true;
+        set.pct0 = pct;   // 進行同期(syncFutureHypSessions)で使う基準%
+        set.weight = pctWeight(rm1, pct) + hyp.offsetKg;
+        set.reps = hyp.reps;
+        set.note = '💪 筋肥大セット・限界2回手前まで';
+      });
     }
   }
 
   if (type === 'technique') {
-    // ポーズ＋低レップで爆発的な立ち上がり（レートオブフォースデベロップメント）を強化
+    // DUP構成のストレングス日(5レップ): 77.5〜87.5%の中強度で高重量とボリュームの橋渡し。
+    // 最終セットのAMRAPがAPRE(自動調整)のアンカー。5レップ帯はAPRE研究のプロトコルに適合し、
+    // 達成レップ＋RPEが毎週の高信頼データ源として達成度評価・即時調整に流れる
     let pct, sets, reps, note;
     if (taperWeek) {
-      // テーパー週の水曜＝テスト3日前: 神経系プライミングのみ。
-      // 高重量はテスト5〜7日前までに終える原則に従い、軽い爆発的挙上に留める
-      pct = 75; sets = 2; reps = 2; note = '爆発的スピード重視（テーパー・追い込まない）';
+      // テーパー週の水曜＝テスト3日前: 軽く動きを確認するのみ。高重量は5〜7日前までに終える
+      pct = 75; sets = 2; reps = 2; note = '軽く・追い込まない（テーパー）';
     }
-    else if (phaseName === 'accumulation') { pct = 70; sets = 4; reps = 3; note = '1秒ポーズ・爆発的に挙上'; }
-    else if (phaseName === 'intensification') { pct = 75; sets = 4; reps = 2; note = '1秒ポーズ・爆発的に挙上'; }
-    else if (phaseName === 'peaking') { pct = 87; sets = 3; reps = 1; note = '🎙️ ポーズ＋コマンド練習'; }
-    else { /* deload=回復微週 */ pct = 88; sets = 2; reps = 1; note = '🎙️ オープナー練習（コマンド）'; }
+    else if (phaseName === 'accumulation') { pct = 77.5 + wave; sets = 4; reps = 5; note = ''; }
+    else if (phaseName === 'intensification') { pct = 80 + wave; sets = 3; reps = 5; note = ''; }
+    else if (phaseName === 'peaking') { pct = 87; sets = 3; reps = 1; note = '軽めの高強度シングル（実現ブロック）'; }
+    else { /* deload=回復微週 */ pct = 88; sets = 2; reps = 1; note = 'オープナー確認'; }
 
     for (let i = 0; i < sets; i++) {
-      mainSets.push({ weight: pctWeight(rm1, pct), reps, note, commands: !taperWeek && (phaseName === 'peaking' || phaseName === 'deload') });
+      mainSets.push({ weight: pctWeight(rm1, pct), reps, note });
+    }
+    // APREアンカー: 蓄積・強化期のみ最終セットをAMRAPにする（限界2〜3回手前で止める: Robinson 2024）
+    if (!taperWeek && (phaseName === 'accumulation' || phaseName === 'intensification')) {
+      const last = mainSets[mainSets.length - 1];
+      last.amrap = true;
+      last.note = '🔥 AMRAP: 限界2〜3回手前(RPE9)まで・上限6回';
     }
   }
 
   if (type === 'main') {
-    // メインは高強度シングル/ダブル中心で最大筋力・神経系を強化
+    // メインは高強度シングル特化で最大筋力・神経系を強化（DUPのheavy日）
     let pct, sets, reps;
-    if (phaseName === 'accumulation') { pct = 83.5 + wave; sets = 3; reps = 2; }
+    if (phaseName === 'accumulation') { pct = 84 + wave; sets = 4; reps = 1; }
     else if (phaseName === 'intensification') { pct = 87.5 + wave; sets = 4; reps = 1; }
     else { pct = 72; sets = 3; reps = 2; }
 
@@ -1403,28 +1401,30 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
 
     if (phaseName === 'peaking') {
       // 実現（realization）ブロック：高強度シングルへ漸増。試技に近い重量に習熟
-      mainSets.push({ weight: pctWeight(rm1, 90), reps: 1, note: '🎙️ ポーズ＋コマンド' , commands: true });
-      mainSets.push({ weight: pctWeight(rm1, 93), reps: 1, note: '🎙️ ポーズ＋コマンド（オープナー想定）', commands: true });
-      mainSets.push({ weight: pctWeight(rm1, 96), reps: 1, note: '🎙️ ポーズ＋コマンド（伸びれば挑戦）', commands: true });
+      mainSets.push({ weight: pctWeight(rm1, 90), reps: 1, note: '高強度シングル（確実に）' });
+      mainSets.push({ weight: pctWeight(rm1, 93), reps: 1, note: '高強度シングル（オープナー想定）' });
+      mainSets.push({ weight: pctWeight(rm1, 96), reps: 1, note: '高強度シングル（伸びれば挑戦）' });
       // テーパー理論：量を抑えるため軽いバックオフ1本のみ
       mainSets.push({ weight: pctWeight(rm1, 82), reps: 2, note: 'バックオフ（量確保）' });
     } else if (phaseName === 'deload') {
       // テーパー週＝試合直前：オープナー確認のみ。疲労を残さない
-      mainSets.push({ weight: pctWeight(rm1, 85), reps: 1, note: '🎙️ コマンド練習', commands: true });
-      mainSets.push({ weight: pctWeight(rm1, 90), reps: 1, note: '🎙️ オープナー確認（これで終了）', commands: true });
+      mainSets.push({ weight: pctWeight(rm1, 85), reps: 1, note: '軽い確認シングル' });
+      mainSets.push({ weight: pctWeight(rm1, 90), reps: 1, note: 'オープナー確認（これで終了）' });
     } else {
-      // トップシングル: その日の最高重量1本（蓄積90%・強化95%）。
-      // 1RM向上は挙上重量への特異性が最重要で、90%超に毎週触れることで
-      // 神経系の出力（運動単位の動員・発火頻度）と重量慣れを維持する。
-      // 1本のみなので疲労コストは最小。代わりにワークセットを1本減らしINOLをほぼ中立に保つ
-      const topPct = Math.min(95, (phaseName === 'accumulation' ? 87.5 : 90) + wave);
+      // トップシングル: その日の最高重量1本。蓄積87.5→92.5%、強化は90→95→100%のPRウェーブ。
+      // 1RM向上は挙上重量への特異性が最重要で、計画1RMの100%は中盤以降実測MAX超えとなり
+      // 毎ブロックでPR挑戦の機会が来る（重い重量に先に進むことで神経系の停滞を防ぐ）。
+      // トップ＋ワークシングルの合計は5〜6本まで（Prilepin: 90%以上の最適総レップは4〜7）
+      const topPct = phaseName === 'accumulation' ? 87.5 + wave : 90 + 5 * Math.min(phasePos, 2);
       mainSets.push({ weight: pctWeight(rm1, topPct), reps: 1, top: true,
-        note: '⚡ トップシングル・限界1〜2回手前(RPE8〜9)で確実に' });
+        note: topPct >= 97.5
+          ? '⚡ PRチャレンジ・限界ギリギリの1本(RPE9.5)・失敗したら即終了して次へ'
+          : '⚡ トップシングル・限界1〜2回手前(RPE8〜9)で確実に' });
       for (let i = 0; i < sets; i++) {
         mainSets.push({ weight: pctWeight(rm1, pct), reps, note: '' });
       }
       // バックオフは1本のみ・低レップ（神経系優先で疲労を抑える）
-      mainSets.push({ weight: pctWeight(rm1, pct - 8), reps: reps + 1, note: 'バックオフセット' });
+      mainSets.push({ weight: pctWeight(rm1, pct - 8), reps: reps + 1, back: true, note: 'バックオフセット' });
     }
   }
 
@@ -1504,7 +1504,7 @@ function renderProgram() {
   });
 
   const phaseLabels = { accumulation:'蓄積', intensification:'強化', peaking:'ピーキング', deload:'ディロード', MAX_TEST:'MAXテスト' };
-  const typeLabels = { volume:'ボリューム', technique:'テクニック', main:'メインセッション' };
+  const typeLabels = { volume:'筋肥大（8〜10レップ）', technique:'5レップ', main:'メインセッション' };
   const typeBadges = { volume:'badge-blue', technique:'badge-yellow', main:'badge-green' };
 
   for (let w = 0; w < totalWeeks; w++) {
@@ -1591,7 +1591,7 @@ function openSession(date, type) {
 
 let lastTrainingKey = null;
 function renderTraining(session) {
-  const typeLabels = { volume:'ボリューム', technique:'テクニック', main:'メインセッション', MAX_TEST:'MAXテスト' };
+  const typeLabels = { volume:'筋肥大（8〜10レップ）', technique:'5レップ', main:'メインセッション', MAX_TEST:'MAXテスト' };
   const phaseLabels = { accumulation:'蓄積フェーズ', intensification:'強化フェーズ', peaking:'ピーキング', deload:'ディロード', MAX_TEST:'MAXテスト' };
   const done = state.completedSessions[session.date + session.type];
 
@@ -1723,7 +1723,7 @@ function renderTraining(session) {
       <div class="set-num" style="${numStyle}">${i+1}</div>
       <div class="set-info">
         <div class="set-weight" style="${numStyle}">${set.weight}kg</div>
-        <div class="set-reps">${set.amrap ? `${set.reps}rep以上を目標` : set.hyp ? `目標${set.reps}rep（8〜12）` : `${set.reps}rep`} · ${pct}% ${set.note ? '— ' + set.note : ''}</div>
+        <div class="set-reps">${set.amrap ? `${set.reps}rep以上を目標` : set.hyp ? `目標${set.reps}rep（8〜10）` : `${set.reps}rep`} · ${pct}% ${set.note ? '— ' + set.note : ''}</div>
         ${prevSet ? `<div style="font-size:12px;color:var(--text2);margin-top:2px">前回: ${prevSet.weight}kg × ${prevSet.reps}rep</div>` : ''}
         ${loggedSet ? `<div style="font-size:12px;color:var(--green);margin-top:2px">記録: ${loggedSet.weight}kg × ${loggedSet.reps}rep</div>` : ''}
       </div>
@@ -1792,7 +1792,7 @@ function openLogModal() {
       html += `<div style="font-size:12px;color:var(--red);margin:4px 0 2px">🔥 AMRAPセット: 実際にできたレップ数を正確に入力してください（翌週の負荷自動調整に使われます）</div>`;
     }
     if (set.hyp) {
-      html += `<div style="font-size:12px;color:var(--green);margin:4px 0 2px">💪 筋肥大セット: 8〜12回で限界2回手前まで。全セット12回到達で次回+2.5kg</div>`;
+      html += `<div style="font-size:12px;color:var(--green);margin:4px 0 2px">💪 筋肥大セット: 8〜10回で限界2回手前まで。全セット10回到達で次回+2.5kg</div>`;
     }
     if (set.top) {
       html += `<div style="font-size:12px;color:var(--accent2);margin:4px 0 2px">⚡ トップシングル: RPEを必ず入力してください（実力推定・自動調整の最重要データです）</div>`;
@@ -1917,7 +1917,7 @@ function saveLog() {
   } else if (plan && plan.noRpe) {
     setTimeout(() => alert('記録を保存しました。トップセット（最重量セット）のRPEを入力すると、実力に合わせたプログラム自動調整が行われます。'), 150);
   } else if (plan) {
-    setTimeout(() => alert(`記録を保存しました。分析の結果、プログラムは現状維持が最適です 👍${apre ? '\n（AMRAPは目標帯内のため、次のボリューム日も同じ重量です）' : ''}`), 150);
+    setTimeout(() => alert(`記録を保存しました。分析の結果、プログラムは現状維持が最適です 👍${apre ? '\n（AMRAPは目標帯内のため、次の5レップ日も同じ重量です）' : ''}`), 150);
   } else {
     setTimeout(() => alert('記録を保存しました。'), 150);
   }
@@ -2041,11 +2041,16 @@ function planRecalibration(session, loggedSets) {
 // 「今日以降の未実施・未記録セッション」だけを最新ロジックで組み直す。
 // 過去のセッション・記録・完了状態・各週の計画1RM(rm1)はそのまま維持する。
 // 生成ロジックを変更したらこの番号を上げること
-const BUILD_VERSION = 31;
+const BUILD_VERSION = 35;
 function migrateProgramBuild() {
   if (!state.program || !state.profile) return false;
   if ((state.program.buildVersion || 0) >= BUILD_VERSION) return false;
-  const today = new Date().toISOString().split('T')[0];
+  // 反映は「来週の月曜」から。進行中の週は現行メニューのまま完了させる
+  // （週の途中で構成が変わると疲労配分と記録の比較が崩れるため）
+  const now = new Date();
+  const cut = new Date(now);
+  cut.setDate(now.getDate() + (((8 - now.getDay()) % 7) || 7));
+  const today = cut.toISOString().split('T')[0];
   // 各週のrm1は既存セッションから引き継ぐ（実力推定・再調整の結果を保持）
   const rmByWeek = {};
   state.program.sessions.forEach(s => { if (rmByWeek[s.weekIdx] == null) rmByWeek[s.weekIdx] = s.rm1; });
@@ -2136,8 +2141,8 @@ function recomputeHypState() {
     const hs = (r.sets || []).filter(s => s.hyp && s.reps);
     if (!hs.length) return;
     const m = Math.min(...hs.map(s => s.reps));
-    if (m >= 12) { hyp.offsetKg += 2.5; hyp.reps = 8; }
-    else if (m >= hyp.reps) hyp.reps = Math.min(12, m + 1);
+    if (m >= 10) { hyp.offsetKg += 2.5; hyp.reps = 8; }
+    else if (m >= hyp.reps) hyp.reps = Math.min(10, m + 1);
   });
   state.hyp = hyp;
 }
@@ -2154,9 +2159,9 @@ function syncFutureHypSessions(afterDate) {
     let touched = false;
     s.mainSets.forEach(set => {
       if (!set.hyp) return;
-      set.w0 = pctWeight(s.rm1, 67.5) + state.hyp.offsetKg;
+      set.w0 = pctWeight(s.rm1, set.pct0 || 67.5) + state.hyp.offsetKg;
       set.reps = state.hyp.reps;
-      set.note = '💪 筋肥大バックオフ・限界2回手前まで';
+      set.note = '💪 筋肥大セット・限界2回手前まで';
       touched = true;
     });
     if (touched) recalcSetWeights(s); // レディネス%再適用・APREはhyp対象外
@@ -2165,11 +2170,11 @@ function syncFutureHypSessions(afterDate) {
 
 // 本来のAPREテーブル方式。planRecalibrationとの責務分離:
 //   - planRecalibration(マクロ): 計画1RM(rm1)と期間全体を再構築。乖離±2.5kg以上でconfirm提案
-//   - planApreAdjust(マイクロ): 次のvolume日のセット重量のみ(rm1は不変)
+//   - planApreAdjust(マイクロ): 次の5レップ日(水曜)のセット重量のみ(rm1は不変)
 // マクロが適用された場合、AMRAP結果は新rm1に織り込み済み＋以降セッションも再構築済みのため、
 // APREを重ねると二重調整になる。よってAPREは「マクロが変更なし or ユーザーが却下」の時のみ発動する。
 function planApreAdjust(session, rec) {
-  if (!state.program || !session || session.type !== 'volume') return null;
+  if (!state.program || !session || session.type !== 'technique') return null;
   if (session.phaseName !== 'accumulation' && session.phaseName !== 'intensification') return null;
   const am = rec && rec.sets ? rec.sets.find(s => s.amrap && s.weight && s.reps) : null;
   if (!am) return null;
@@ -2182,9 +2187,10 @@ function planApreAdjust(session, rec) {
   else if (achieved >= plannedReps) deltaKg = 0;             // 目標帯 → 維持
   else if (achieved === plannedReps - 1) deltaKg = -2.5;     // わずかに未達 → 微減
   else deltaKg = -Math.max(2.5, round25(am.weight * 0.05));  // 大きく未達 → 約5%減
-  // ターゲット: 次の未実施ボリューム日（蓄積/強化のみ。テーパー週・ピーキング週の重量は保護）
+  // ※アンカーは水曜5レップ日（DUP再設計でAMRAPを移設）
+  // ターゲット: 次の未実施5レップ日（蓄積/強化のみ。テーパー週・ピーキング週の重量は保護）
   const target = state.program.sessions.find(s =>
-    s.date > session.date && s.type === 'volume' && !s.taperWeek
+    s.date > session.date && s.type === 'technique' && !s.taperWeek
     && (s.phaseName === 'accumulation' || s.phaseName === 'intensification')
     && !state.completedSessions[s.date + s.type]
     && !state.records.some(r => r.key === s.date + '_' + s.type));
@@ -2210,7 +2216,7 @@ function confirmApre(adj) {
   const after = round25(base + adj.deltaKg);
   let msg = '【APRE自動調整】\n';
   msg += `AMRAPセット ${adj.achievedReps}回 達成（目標${adj.plannedReps}回${adj.achievedReps >= 6 ? '・上限到達' : ''}）。\n`;
-  msg += `次のボリューム日（${fmtDate(t.date)}）の重量を ${adj.deltaKg > 0 ? '+' : ''}${adj.deltaKg}kg 調整します（${base}kg → ${after}kg）。\n`;
+  msg += `次の5レップ日（${fmtDate(t.date)}）の重量を ${adj.deltaKg > 0 ? '+' : ''}${adj.deltaKg}kg 調整します（${base}kg → ${after}kg）。\n`;
   msg += '達成レップに応じて次の負荷を即時調整するAPRE方式です。\n\n適用しますか？';
   if (confirm(msg)) {
     applyApreAdjust(adj);
@@ -3480,7 +3486,7 @@ function renderTheory() {
   html += `
     <div class="theory-section">
       <h3>📊 INOL（強度別回数負荷）管理</h3>
-      <p>INOL = 総レップ数 ÷ (100 - 強度%) で算出。本プログラムは<strong>週あたりの合計INOLを2.0〜2.8</strong>に保つよう蓄積・強化期のセット数を自動調整。過度な疲労を避けつつ、成長に十分な負荷量を確保する。ピーキング/テーパー期は意図的に低負荷にする。</p>
+      <p>INOL = 総レップ数 ÷ (100 - 強度%) で算出。本プログラムは<strong>高重量2日（水曜5レップ＋土曜シングル）の週合計INOLを1.2〜2.0</strong>に保つようセット数を自動調整（月曜筋肥大日は低%のため対象外、量はセット数と週の総ハードセットで管理）。過度な疲労を避けつつ、成長に十分な負荷量を確保する。ピーキング/テーパー期は意図的に低負荷にする。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
@@ -3511,25 +3517,25 @@ function renderTheory() {
     <div class="divider"></div>
     <div class="theory-section">
       <h3>📅 ウェーブ・ペリオダイゼーション</h3>
-      <p>週3回の頻度で「蓄積 → 強化 → ピーキング → ディロード」の4フェーズを繰り返す。<strong>土曜日をメインセッション（最大強度）</strong>に設定し、月曜は高ボリューム、水曜は技術練習に特化。${weeks ? `本プログラムは${weeks}週間構成。` : ''}</p>
+      <p>週3回の頻度で「蓄積 → 強化 → ピーキング → ディロード」の4フェーズを繰り返し、さらに週の中でも<strong>DUP（日次波状ピリオダイゼーション）</strong>としてレップ帯を波状に変える: <strong>月曜=筋肥大（70〜77.5%×8〜10回）、水曜=5レップ（77.5〜87.5%）、土曜=高重量シングル特化（84〜95%）</strong>。メタ分析では波状型は直線型を上回り（筋力+23.7〜24.5% vs +17.0〜18.0%）、その優位性は鍛錬者のベンチプレスで特に顕著と報告されている。${weeks ? `本プログラムは${weeks}週間構成。` : ''}</p>
       <p>さらにフェーズ内でも<strong>毎週+2.5%のステップローディング</strong>を行う（例: 強化期トップシングル90→92.5→95%、ワーク87.5→90→92.5%）。ディロードで区切って少し下げ、次の3週で前回を超えていく古典的ウェーブ構造で、毎週ほぼ確実に扱う重量が変わる。強度が上がる週はINOL自動調整がセット数を絞るため、「量が多く軽い週 → 量が少なく重い週」という周期化の王道が自然に成立する。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
       <h3>⚡ 高重量・低レップによる神経系強化</h3>
-      <p>本プログラムは<strong>高重量×低レップ（メイン/テクニック日は1〜3回、ボリューム日は1〜5回）</strong>を中心に構成。85〜90%超の高強度シングル/ダブルは、運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。さらに土曜メイン日の冒頭には<strong>⚡ トップシングル×1本（蓄積期87.5→92.5%、強化期90→95%と週ごとに漸増）</strong>を置き、毎週90%超の重量に触れることで神経系の出力と「重さ慣れ」を維持する。1RM向上は挙上重量への特異性が最も重要であり、ボリューム（筋持久力・筋量）だけでは最大重量は伸びない。トップシングルは限界1〜2回手前（RPE8〜9）で確実に挙げること — 1本だけなので疲労コストは最小で、代わりにワークセットを1本減らして週の総負荷（INOL）は中立に保っている。レップを抑えることで1セットあたりの疲労を最小化し、フォームの質を保ったまま高強度の反復回数を稼ぐ（量はセット数で確保）。テクニック日のポーズ＋爆発的挙上はRFD（力の立ち上がり速度）を改善する。</p>
+      <p>土曜メイン日は<strong>高重量シングル特化</strong>。冒頭の<strong>⚡ トップシングル×1本（蓄積期87.5→92.5%、強化期は90→95→100%のPRウェーブ）</strong>で毎週その日の最高重量に触れ、計画1RMの100%は中盤以降「実測MAX超え」となるため毎ブロックでPR挑戦の機会が来る。100%の週は限界ギリギリの1本（RPE9.5）まで許容し、失敗しても即終了すれば疲労コストは1本分で済む。続くワークシングル（84〜92.5%×1×3〜5本）で高強度の練習量を積む。高強度シングルは運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。1RM向上は挙上重量への特異性が最も重要であり、ボリューム（筋持久力・筋量）だけでは最大重量は伸びない。ただし90%以上の総レップには上限があり（Prilepin: 最適4〜7回）、本アプリはトップ＋ワークで計5〜6本までに制限。トップシングルは限界1〜2回手前（RPE8〜9）で確実に挙げること。最後の軽いバックオフ1本で質を保ったまま量を締める。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
       <h3>🔥 APRE（自動調整式漸進抵抗運動）— AMRAPセット</h3>
-      <p>蓄積期・強化期のボリューム日（月曜）の最終セットは<strong>AMRAP</strong>（できる限りのレップ数）で行う。2025年のネットワークメタ分析で、ベンチプレス1RMの向上効果は<strong>APRE ＞ 速度ベース ＞ RPE法 ＞ 固定%法</strong>の順と報告されており、AMRAPの達成レップに応じて翌週の負荷を自動調整するAPREが最上位。本アプリではAMRAPの結果（レップ数＋RPE）が高信頼データとして達成度評価に流れ、さらに<strong>達成レップ数に応じて次のボリューム日の重量を即座に±2.5kg級で自動調整</strong>する（上限6回到達→増量／目標帯→維持／未達→軽減）。±2.5kg以上の実力変動は週次のプログラム再調整（マクロ）が担い、APREはその不感帯を埋めるマイクロ調整として働く。</p>
+      <p>蓄積期・強化期の5レップ日（水曜）の最終セットは<strong>AMRAP</strong>（できる限りのレップ数）で行う。2025年のネットワークメタ分析で、ベンチプレス1RMの向上効果は<strong>APRE ＞ 速度ベース ＞ RPE法 ＞ 固定%法</strong>の順と報告されており、AMRAPの達成レップに応じて次回の負荷を自動調整するAPREが最上位。5レップ帯（77.5〜87.5%）はAPRE研究のプロトコルにも適合する。本アプリではAMRAPの結果（レップ数＋RPE）が高信頼データとして達成度評価に流れ、さらに<strong>達成レップ数に応じて次の5レップ日の重量を即座に±2.5kg級で自動調整</strong>する（上限6回到達→増量／目標帯→維持／未達→軽減）。±2.5kg以上の実力変動は週次のプログラム再調整（マクロ）が担い、APREはその不感帯を埋めるマイクロ調整として働く。</p>
       <p><strong>やり方:</strong> 完全な限界まで行かず<strong>「限界2〜3回手前（RPE9）」で止める・上限6回</strong>。筋力向上には完全な追い込みは不要（Robinson 2024のメタ回帰：筋力向上と追い込み度の関係は無視できる程度）で、つぶれるリスクと疲労コストだけが増える。フォームが崩れ始めたらそこで終了。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
-      <h3>💪 筋肥大バックオフセット（ダブルプログレッション）</h3>
-      <p>蓄積期・強化期のボリューム日（月曜）は、高重量ワーク＋AMRAPの後に<strong>67.5%×8〜12回</strong>の軽量バックオフを追加する（蓄積期2セット・強化期1セット）。Pelland 2024の大規模メタ回帰（67研究）によれば、<strong>筋力は少数の高重量セットで効果の大半が得られて頭打ちになる</strong>一方、<strong>筋肥大はボリュームに比例して伸び続ける</strong>。また筋肥大効果は30〜85%のどの重量帯でも同等（Schoenfeld 2021）。つまり1RM向上に必須の80%以上の高重量はそのままに、疲労コストの小さい軽量高レップで筋肥大ボリュームを上乗せするのが最も効率的で、筋量の増加が中長期の筋力の伸びしろ（天井）を引き上げる。</p>
-      <p><strong>進め方（ダブルプログレッション）:</strong> 目標8回からスタートし、全セットで目標を達成すると翌回の目標が+1回。<strong>全セット12回に到達すると重量+2.5kgされ目標8回にリセット</strong>される（記録から自動判定）。限界2回手前で止めてよい。現在の目標: <strong>${state.hyp ? `${state.hyp.reps}回 / 重量オフセット+${state.hyp.offsetKg}kg` : '8回'}</strong>。ピーキング・テーパー・ディロード週は疲労管理のため行わない。INOL（高重量疲労指標）にはこのセットは含めない。※生成済みの既存プログラムには、再生成またはプログラム再調整の承認時から反映される。</p>
+      <h3>💪 筋肥大日（月曜・8〜10レップのダブルプログレッション）</h3>
+      <p>蓄積期・強化期の月曜は丸ごと筋肥大日: <strong>70〜77.5%×8〜10回×3〜4セット</strong>でボリュームを稼ぐ。Pelland 2024の大規模メタ回帰（67研究）によれば、<strong>筋力は少数の高重量セットで効果の大半が得られて頭打ちになる</strong>一方、<strong>筋肥大はボリュームに比例して伸び続ける</strong>。また筋肥大効果は30〜85%のどの重量帯でも同等（Schoenfeld 2021）。高重量刺激は水曜・土曜が担うため、この日は疲労コストの小さい中重量高レップに徹し、筋量の増加＝中長期の筋力の伸びしろ（天井）を引き上げる。</p>
+      <p><strong>進め方（ダブルプログレッション）:</strong> 目標8回からスタートし、全セットで目標を達成すると翌回の目標が+1回。<strong>全セット10回に到達すると重量+2.5kgされ目標8回にリセット</strong>される（記録から自動判定）。限界2回手前で止めてよい。現在の目標: <strong>${state.hyp ? `${state.hyp.reps}回 / 重量オフセット+${state.hyp.offsetKg}kg` : '8回'}</strong>。ピーキング・テーパー・ディロード週は疲労管理のため行わない。この日のセットはINOL（高重量疲労指標）には含めない（週の高重量INOL 1.2〜2.0は水曜・土曜で管理）。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
@@ -3555,11 +3561,6 @@ function renderTheory() {
     </div>
     <div class="divider"></div>
     <div class="theory-section">
-      <h3>🎙️ 競技フォーム＆コマンド練習</h3>
-      <p>本番は「胸で静止 → スタート → プレス → ラック」のコマンドに従う必要があり、止めの分だけ挙上が難しくなる。ピーキング期は<strong>全セットでポーズ＋コマンドを再現</strong>し、本番条件に習熟する。</p>
-    </div>
-    <div class="divider"></div>
-    <div class="theory-section">
       <h3>🥇 試技（アテンプト）選択戦略</h3>
       <p>MAXテスト日・試合日は競技の標準係数で3本勝負を組む：</p>
       <ul>
@@ -3572,7 +3573,7 @@ function renderTheory() {
     <div class="divider"></div>
     <div class="theory-section">
       <h3>📈 MAXテスト計画（試合シミュレーション）</h3>
-      <p>${weeks ? `プログラム${Math.floor(weeks/2)}週目と${weeks}週目` : '6〜8週ごと'}にMAXテスト日を設定。MAXテストのある週は（中間テスト週を含めて）月・水が自動的にテーパー構成になり、疲労を抜いてから試技係数に沿って3本でMAX更新を狙う。コンディション不良なら無理せず延期。</p>
+      <p>${weeks ? `プログラム${Math.floor(weeks/2)}週目と${weeks}週目` : '5〜7週ごと'}にMAXテスト日を設定（10週以上のプログラムは中央に中間MAXテストを自動挿入）。MAXテストのある週は（中間テスト週を含めて）月・水が自動的にテーパー構成になり、疲労を抜いてから試技係数に沿って3本でMAX更新を狙う。中間テストで実測MAXが更新されると基準1RMも自動更新され、以降の全メニューが新しい実力基準で組まれる。コンディション不良なら無理せず延期。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
@@ -3656,7 +3657,7 @@ function init() {
   if (state.program) {
     // 生成ロジックが更新されていれば、今日以降の未実施セッションを新設計で組み直す
     if (migrateProgramBuild()) {
-      setTimeout(() => alert('アプリ更新: 今日以降のメニューを最新のプログラム設計（週次ステップローディング・トップシングル・筋肥大バックオフ）で組み直しました。過去の記録と計画1RMはそのまま引き継いでいます 💪'), 400);
+      setTimeout(() => alert('アプリ更新: 来週の月曜以降のメニューをDUP設計（月:筋肥大8〜10レップ／水:5レップ＋AMRAP／土:高重量シングル特化）＋強化期100%PRチャレンジ＋中間MAXテスト週の構成に組み直しました。今週の残りは現行メニューのまま、過去の記録と計画1RMも引き継いでいます 💪'), 400);
     }
     switchTab('program');
   } else {
