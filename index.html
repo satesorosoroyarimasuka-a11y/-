@@ -1138,6 +1138,19 @@ function isMaxWeek(totalWeeks, weekIdx) {
   return false;
 }
 
+// フェーズ内の週位置(0,1,2...最大2)。ディロードやフェーズ切替でリセットされ、
+// 「ディロード明けに少し下げて前回を超えていく」3週ウェーブの土台になる
+function phaseRunPos(totalWeeks, weekIdx) {
+  const ph = programPhase(totalWeeks, weekIdx).name;
+  if (ph === 'deload') return 0;
+  let pos = 0;
+  for (let k = weekIdx - 1; k >= 0 && pos < 2; k--) {
+    if (programPhase(totalWeeks, k).name === ph) pos++;
+    else break;
+  }
+  return pos;
+}
+
 function buildProgramSessions(profile, rmForWeek) {
   const { startDate, totalWeeks } = profile;
   const program = [];
@@ -1161,9 +1174,11 @@ function buildProgramSessions(profile, rmForWeek) {
     // MAXテスト週（最終週＋中間MAX週）の月・水は指数型テーパー構成にする
     // （量約50%減・強度維持・最後の高重量刺激はテスト5日前: Pritchard 2018 / Travis 2020）
     const taperWeek = isMaxDay;
-    const vol = buildSession(monDate, 'volume', weekRM, phase, w, isDeload, false, taperWeek);
-    const tech = buildSession(wedDate, 'technique', weekRM, phase, w, isDeload, false, taperWeek);
-    const main = buildSession(satDate, 'main', weekRM, phase, w, isDeload, isMaxDay);
+    // フェーズ内で毎週+2.5%のステップローディング(2.5kg丸めに吸収されない見える進行を保証)
+    const phasePos = phaseRunPos(totalWeeks, w);
+    const vol = buildSession(monDate, 'volume', weekRM, phase, w, isDeload, false, taperWeek, phasePos);
+    const tech = buildSession(wedDate, 'technique', weekRM, phase, w, isDeload, false, taperWeek, phasePos);
+    const main = buildSession(satDate, 'main', weekRM, phase, w, isDeload, isMaxDay, false, phasePos);
 
     // 週あたりINOLを目標2.0〜2.8に調整（蓄積・強化期のみ。ピーキング/テーパーは意図的に低負荷）
     // MAXテスト日は3本勝負の固定構成のため対象外（自動調整で試技が重複挿入されるバグを回避）
@@ -1286,7 +1301,10 @@ function validateAndOptimize() {
   return report;
 }
 
-function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = false, taperWeek = false) {
+function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = false, taperWeek = false, phasePos = 0) {
+  // フェーズ内週次ステップ(+2.5%/週・3週で頭打ち)。固定%だとrm1の微増(週0.6〜1.25kg)が
+  // 2.5kg丸めに吸収され同じ重量が数週間続くため、フェーズ内でも強度を明示的に漸増させる
+  const wave = 2.5 * Math.min(phasePos, 2);
   const dateStr = date.toISOString().split('T')[0];
   let mainSets = [];
   let rackup = null;
@@ -1318,8 +1336,8 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
       pct = (state.profile?.age >= 45) ? 85 : 87; sets = 3; reps = 1;
       note = '⚡ 最後の高重量刺激（テーパー）— これ以降は疲労を抜く';
     }
-    else if (phaseName === 'accumulation') { pct = 80; sets = 5; reps = 5; }
-    else if (phaseName === 'intensification') { pct = 85; sets = 5; reps = 3; }
+    else if (phaseName === 'accumulation') { pct = 77.5 + wave; sets = 5; reps = 5; }
+    else if (phaseName === 'intensification') { pct = 82.5 + wave; sets = 5; reps = 3; }
     else if (phaseName === 'peaking') { pct = 82; sets = 3; reps = 2; }
     // ディロードは45歳以上でより深く落とす（マスターズは回復微週の強度減を10〜15%と大きめに取る）
     else { /* deload=回復微週 */ pct = (state.profile?.age >= 45) ? 65 : 70; sets = 2; reps = 3; note = '軽め・疲労抜き'; }
@@ -1372,8 +1390,8 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
   if (type === 'main') {
     // メインは高強度シングル/ダブル中心で最大筋力・神経系を強化
     let pct, sets, reps;
-    if (phaseName === 'accumulation') { pct = 86; sets = 3; reps = 2; }
-    else if (phaseName === 'intensification') { pct = 90; sets = 4; reps = 1; }
+    if (phaseName === 'accumulation') { pct = 83.5 + wave; sets = 3; reps = 2; }
+    else if (phaseName === 'intensification') { pct = 87.5 + wave; sets = 4; reps = 1; }
     else { pct = 72; sets = 3; reps = 2; }
 
     // ラックアップ（重量慣れ）— テーパー週は神経系を疲労させないため省略
@@ -1399,7 +1417,7 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
       // 1RM向上は挙上重量への特異性が最重要で、90%超に毎週触れることで
       // 神経系の出力（運動単位の動員・発火頻度）と重量慣れを維持する。
       // 1本のみなので疲労コストは最小。代わりにワークセットを1本減らしINOLをほぼ中立に保つ
-      const topPct = phaseName === 'accumulation' ? 90 : 95;
+      const topPct = Math.min(95, (phaseName === 'accumulation' ? 87.5 : 90) + wave);
       mainSets.push({ weight: pctWeight(rm1, topPct), reps: 1, top: true,
         note: '⚡ トップシングル・限界1〜2回手前(RPE8〜9)で確実に' });
       for (let i = 0; i < sets; i++) {
@@ -3455,11 +3473,12 @@ function renderTheory() {
     <div class="theory-section">
       <h3>📅 ウェーブ・ペリオダイゼーション</h3>
       <p>週3回の頻度で「蓄積 → 強化 → ピーキング → ディロード」の4フェーズを繰り返す。<strong>土曜日をメインセッション（最大強度）</strong>に設定し、月曜は高ボリューム、水曜は技術練習に特化。${weeks ? `本プログラムは${weeks}週間構成。` : ''}</p>
+      <p>さらにフェーズ内でも<strong>毎週+2.5%のステップローディング</strong>を行う（例: 強化期トップシングル90→92.5→95%、ワーク87.5→90→92.5%）。ディロードで区切って少し下げ、次の3週で前回を超えていく古典的ウェーブ構造で、毎週ほぼ確実に扱う重量が変わる。強度が上がる週はINOL自動調整がセット数を絞るため、「量が多く軽い週 → 量が少なく重い週」という周期化の王道が自然に成立する。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
       <h3>⚡ 高重量・低レップによる神経系強化</h3>
-      <p>本プログラムは<strong>高重量×低レップ（メイン/テクニック日は1〜3回、ボリューム日は1〜5回）</strong>を中心に構成。85〜90%超の高強度シングル/ダブルは、運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。さらに土曜メイン日の冒頭には<strong>⚡ トップシングル（蓄積期90%→強化期95%×1本）</strong>を置き、毎週90%超の重量に触れることで神経系の出力と「重さ慣れ」を維持する。1RM向上は挙上重量への特異性が最も重要であり、ボリューム（筋持久力・筋量）だけでは最大重量は伸びない。トップシングルは限界1〜2回手前（RPE8〜9）で確実に挙げること — 1本だけなので疲労コストは最小で、代わりにワークセットを1本減らして週の総負荷（INOL）は中立に保っている。レップを抑えることで1セットあたりの疲労を最小化し、フォームの質を保ったまま高強度の反復回数を稼ぐ（量はセット数で確保）。テクニック日のポーズ＋爆発的挙上はRFD（力の立ち上がり速度）を改善する。</p>
+      <p>本プログラムは<strong>高重量×低レップ（メイン/テクニック日は1〜3回、ボリューム日は1〜5回）</strong>を中心に構成。85〜90%超の高強度シングル/ダブルは、運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。さらに土曜メイン日の冒頭には<strong>⚡ トップシングル×1本（蓄積期87.5→92.5%、強化期90→95%と週ごとに漸増）</strong>を置き、毎週90%超の重量に触れることで神経系の出力と「重さ慣れ」を維持する。1RM向上は挙上重量への特異性が最も重要であり、ボリューム（筋持久力・筋量）だけでは最大重量は伸びない。トップシングルは限界1〜2回手前（RPE8〜9）で確実に挙げること — 1本だけなので疲労コストは最小で、代わりにワークセットを1本減らして週の総負荷（INOL）は中立に保っている。レップを抑えることで1セットあたりの疲労を最小化し、フォームの質を保ったまま高強度の反復回数を稼ぐ（量はセット数で確保）。テクニック日のポーズ＋爆発的挙上はRFD（力の立ち上がり速度）を改善する。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
