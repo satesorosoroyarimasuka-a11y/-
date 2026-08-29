@@ -1104,7 +1104,7 @@ function generateProgram() {
 
   const program = buildProgramSessions(profile, rmForWeek);
 
-  state.program = { profile, sessions: program, generated: new Date().toISOString() };
+  state.program = { profile, sessions: program, generated: new Date().toISOString(), buildVersion: BUILD_VERSION };
   save();
 
   // 実現可能性チェック & 最適化
@@ -2034,6 +2034,45 @@ function planRecalibration(session, loggedSets) {
   });
 
   return { changed: true, newRM: achievedRM, prevRM, delta, confidence, restLimited, extendedWeeks, newTotal, rebuilt, newProfile: p };
+}
+
+// ===== 生成ロジック更新の自動移行 =====
+// アプリ更新でセッション生成ロジックが変わったとき、生成済みプログラムの
+// 「今日以降の未実施・未記録セッション」だけを最新ロジックで組み直す。
+// 過去のセッション・記録・完了状態・各週の計画1RM(rm1)はそのまま維持する。
+// 生成ロジックを変更したらこの番号を上げること
+const BUILD_VERSION = 31;
+function migrateProgramBuild() {
+  if (!state.program || !state.profile) return false;
+  if ((state.program.buildVersion || 0) >= BUILD_VERSION) return false;
+  const today = new Date().toISOString().split('T')[0];
+  // 各週のrm1は既存セッションから引き継ぐ（実力推定・再調整の結果を保持）
+  const rmByWeek = {};
+  state.program.sessions.forEach(s => { if (rmByWeek[s.weekIdx] == null) rmByWeek[s.weekIdx] = s.rm1; });
+  let lastRM = state.profile.currentMax;
+  const rmForWeek = w => { if (rmByWeek[w] != null) lastRM = rmByWeek[w]; return lastRM; };
+  const oldByKey = {};
+  state.program.sessions.forEach(s => oldByKey[s.date + s.type] = s);
+  const rebuilt = buildProgramSessions(state.program.profile || state.profile, rmForWeek);
+  rebuilt.forEach((s, i) => {
+    const key = s.date + s.type;
+    const hasRecord = state.records.some(r => r.key === s.date + '_' + s.type);
+    if ((s.date < today || state.completedSessions[key] || hasRecord) && oldByKey[key]) {
+      rebuilt[i] = oldByKey[key];  // 過去・実施済みは旧構成を維持
+    } else if (oldByKey[key]?.apreAdjust) {
+      // 直前のAMRAP結果によるAPRE調整は新セッションに引き継いで再適用
+      rebuilt[i].apreAdjust = oldByKey[key].apreAdjust;
+      recalcSetWeights(rebuilt[i]);
+    }
+  });
+  state.program.sessions = rebuilt;
+  state.program.buildVersion = BUILD_VERSION;
+  if (state.currentSession) {
+    const cs = rebuilt.find(s => s.date === state.currentSession.date && s.type === state.currentSession.type);
+    if (cs) state.currentSession = cs;
+  }
+  save();
+  return true;
 }
 
 // 提案を実際に適用する
@@ -3615,6 +3654,10 @@ function init() {
   }
 
   if (state.program) {
+    // 生成ロジックが更新されていれば、今日以降の未実施セッションを新設計で組み直す
+    if (migrateProgramBuild()) {
+      setTimeout(() => alert('アプリ更新: 今日以降のメニューを最新のプログラム設計（週次ステップローディング・トップシングル・筋肥大バックオフ）で組み直しました。過去の記録と計画1RMはそのまま引き継いでいます 💪'), 400);
+    }
     switchTab('program');
   } else {
     switchTab('setup');
