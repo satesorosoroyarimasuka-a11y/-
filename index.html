@@ -1344,7 +1344,7 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
     if (!taperWeek && (phaseName === 'accumulation' || phaseName === 'intensification')) {
       mainSets.forEach(set => {
         set.hyp = true;
-        set.note = '💪 筋肥大セット・8回を遂行';
+        set.note = '💪 筋肥大セット・正しいフォームで8回';
       });
     }
   }
@@ -1370,7 +1370,7 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
     if (!taperWeek && (phaseName === 'accumulation' || phaseName === 'intensification')) {
       const last = mainSets[mainSets.length - 1];
       last.amrap = true;
-      last.note = '🔥 AMRAP: 限界2〜3回手前まで・上限6回';
+      last.note = '🔥 AMRAP: フォームが崩れる手前まで・上限6回（崩れたレップは数えない）';
     }
   }
 
@@ -1407,8 +1407,8 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
       const topPct = phaseName === 'accumulation' ? 87.5 + wave : 90 + 5 * Math.min(phasePos, 2);
       mainSets.push({ weight: pctWeight(rm1, topPct), reps: 1, top: true,
         note: topPct >= 97.5
-          ? '⚡ PRチャレンジ・限界ギリギリの1本・失敗したら即終了して次へ'
-          : '⚡ トップシングル・限界1〜2回手前で確実に' });
+          ? '⚡ PRチャレンジ・限界ギリギリの1本・フォームを守れる範囲で。失敗したら即終了'
+          : '⚡ トップシングル・限界1〜2回手前・フォームを崩さず確実に' });
       for (let i = 0; i < sets; i++) {
         mainSets.push({ weight: pctWeight(rm1, pct), reps, note: '' });
       }
@@ -1711,6 +1711,8 @@ function renderTraining(session) {
 
   // Main sets
   html += `<div class="phase-label">${session.isMaxDay ? '試技（アテンプト）' : 'メインセット'}</div>`;
+  // フォームファースト: 全セット共通の品質基準（遂行実績主義の土台）
+  html += `<div style="font-size:12px;color:var(--text2);background:var(--bg3);border-radius:10px;padding:10px 12px;margin-bottom:8px;line-height:1.6">🎯 <strong style="color:var(--text)">1レップの定義:</strong> 肘を伸ばし切った位置から<strong>コントロールして胸にタッチ → 肘を伸ばし切るまで</strong>で1回。バウンド・浅い切り返し・伸ばし切らないレップは<strong>0カウント</strong>（すべてのセットは正しいフォームの練習）</div>`;
   // コマンド練習がある場合の案内
   if (session.mainSets.some(s => s.commands)) {
     html += `<div class="card" style="background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.3);padding:12px;margin-bottom:8px">
@@ -1801,10 +1803,10 @@ function openLogModal() {
   s.mainSets.forEach((set, i) => {
     const ex = existing?.sets?.[i] || {};
     if (set.amrap) {
-      html += `<div style="font-size:12px;color:var(--red);margin:4px 0 2px">🔥 AMRAPセット: 実際にできたレップ数を正確に入力してください（翌週の負荷自動調整に使われます）</div>`;
+      html += `<div style="font-size:12px;color:var(--red);margin:4px 0 2px">🔥 AMRAPセット: 正しいフォームでできたレップ数だけを入力（負荷自動調整に使われます。バウンド等のレップは含めない）</div>`;
     }
     if (set.hyp) {
-      html += `<div style="font-size:12px;color:var(--green);margin:4px 0 2px">💪 筋肥大セット: 指定重量×8回を遂行できたかを正確に記録</div>`;
+      html += `<div style="font-size:12px;color:var(--green);margin:4px 0 2px">💪 筋肥大セット: 正しいフォームで8回できたかを正確に記録</div>`;
     }
     if (set.top) {
       html += `<div style="font-size:12px;color:var(--accent2);margin:4px 0 2px">⚡ トップシングル: 挙がったかどうかが最重要データです。失敗した場合は実際の重量を入力</div>`;
@@ -1819,8 +1821,9 @@ function openLogModal() {
   });
 
   html += `<div style="background:var(--bg3);border-radius:10px;padding:12px;margin-top:4px;font-size:12px;line-height:1.7;color:var(--text2)">
-    <div><strong>記録は「実際に遂行できたか」がすべてです</strong></div>
-    <div>計画通りにできたセットは空欄のままでOK（計画値で記録されます）。できなかったセットだけ、実際の重量・レップを入力してください。</div>
+    <div><strong>記録は「正しいフォームで遂行できたか」がすべてです</strong></div>
+    <div>カウントしてよいのは正しいフォームで挙げたレップだけ。<strong style="color:var(--yellow)">胸でバウンドさせた・フォームが崩れたレップは「できなかった」として数えない</strong>でください（水増しされた記録は自動調整を狂わせ、結果的にあなたの伸びを止めます）。</div>
+    <div style="margin-top:4px">計画通りにできたセットは空欄のままでOK（計画値で記録されます）。できなかったセットだけ、実際の重量・レップを入力してください。</div>
   </div>
   <div class="form-group" style="margin-top:12px">
     <label>今日の体調（自己申告）</label>
@@ -2021,7 +2024,7 @@ function planRecalibration(session, loggedSets) {
 // 「今日以降の未実施・未記録セッション」だけを最新ロジックで組み直す。
 // 過去のセッション・記録・完了状態・各週の計画1RM(rm1)はそのまま維持する。
 // 生成ロジックを変更したらこの番号を上げること
-const BUILD_VERSION = 37;
+const BUILD_VERSION = 38;
 function migrateProgramBuild() {
   if (!state.program || !state.profile) return false;
   if ((state.program.buildVersion || 0) >= BUILD_VERSION) return false;
@@ -3461,6 +3464,14 @@ function renderTheory() {
     </div>
     <div class="divider"></div>
     <div class="theory-section">
+      <h3>🎯 フォームファースト（質の高いレップ主義）</h3>
+      <p>本プログラムの大前提: <strong>すべてのセット・レップは「正しいフォームの練習」であり、重量や回数をこなすこと自体が目的ではない</strong>。筋力発揮は運動学習（スキル）であり、神経系は挙げるたびに「そのフォーム」を学習する。正しいフォームの反復だけが正しい運動パターンを強化し、これが結果的に筋肥大と重量アップへの最短経路になる。</p>
+      <p>胸でバウンドさせる等のチートで数字をクリアしても、①ボトム（最も刺激の強い位置）の張力を反動で逃がすため筋肥大・神経系刺激がともに減る、②「悪い動作」を練習して重量が伸びるほど破綻する、③<strong>水増しされた記録が自動調整を狂わせて重すぎるメニューを生む</strong>、の三重の理由で必ず頭打ちになる。したがって記録にカウントしてよいのは正しいフォームで挙げたレップだけ。AMRAPも「フォームが崩れる手前」が終了ラインで、これは主観的なRPEより客観的な打ち切り基準でもある。</p>
+      <p><strong>1レップの定義（競技標準・全セット共通）:</strong> 肘を伸ばし切ったスタートポジションから、①コントロールして下ろし<strong>バーが胸に触れる</strong>（触れたらすぐ切り返してよい・バウンド禁止）→ ②<strong>肘が伸び切るまで</strong>挙げる — ここまでで1回。伸ばし切りは一瞬でよく、過伸展や上で休む必要はない。<strong>肘を伸ばし切らずに下ろし始めたレップ・胸まで届かない浅いレップはノーカウント</strong>（そのセットの記録は成立した回数まで）。</p>
+      <p><strong>根拠:</strong> ①競技（IPF）の試技成立条件が「胸まで→完全伸展」であり、練習のレップを同じ基準で数えないと練習とMAXテストが別の運動になる（測定の一貫性）。②ROM研究では、テストされる可動域で練習した群が最も伸びる<strong>可動域の特異性</strong>が確認されており、長期比較でもフルROMがパーシャルより大きな神経筋適応を示す。③ロックアウト直前の上部可動域は<strong>上腕三頭筋が最も強く働く区間</strong>で、伸ばし切りを省くと1RMの押し切りを担う筋の練習が抜ける。④「胸に触れた・肘が伸び切った」は誰でも判定できる客観基準で、遂行実績主義のデータ一貫性を守る。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
       <h3>⚡ 高重量・低レップによる神経系強化</h3>
       <p>土曜メイン日は<strong>高重量シングル特化</strong>。冒頭の<strong>⚡ トップシングル×1本（蓄積期87.5→92.5%、強化期は90→95→100%のPRウェーブ）</strong>で毎週その日の最高重量に触れ、計画1RMの100%は中盤以降「実測MAX超え」となるため毎ブロックでPR挑戦の機会が来る。100%の週は限界ギリギリの1本まで許容し、失敗しても即終了すれば疲労コストは1本分で済む。続くワークシングル（84〜92.5%×1×3〜5本）で高強度の練習量を積む。高強度シングルは運動単位の動員数・発火頻度・筋間協調を高め、筋肥大よりも<strong>最大筋力＝神経系の出力</strong>を直接鍛える。1RM向上は挙上重量への特異性が最も重要であり、ボリューム（筋持久力・筋量）だけでは最大重量は伸びない。ただし90%以上の総レップには上限があり（Prilepin: 最適4〜7回）、本アプリはトップ＋ワークで計5〜6本までに制限。トップシングルは限界1〜2回手前で確実に挙げること。最後の軽いバックオフ1本で質を保ったまま量を締める。</p>
     </div>
@@ -3469,7 +3480,7 @@ function renderTheory() {
       <h3>🔥 APRE（自動調整式漸進抵抗運動）— AMRAPセット</h3>
       <p>蓄積期・強化期の5レップ日（水曜）の最終セットは<strong>AMRAP</strong>（できる限りのレップ数）で行う。2025年のネットワークメタ分析で、ベンチプレス1RMの向上効果は<strong>APRE ＞ 速度ベース ＞ RPE法 ＞ 固定%法</strong>の順と報告されており、AMRAPの達成レップに応じて次回の負荷を自動調整するAPREが最上位。5レップ帯（77.5〜87.5%）はAPRE研究のプロトコルにも適合する。本アプリではAMRAPの<strong>達成レップ数（客観値）</strong>が高信頼データとして達成度評価に流れ、さらに<strong>達成レップ数に応じて次の5レップ日の重量を即座に±2.5kg級で自動調整</strong>する（上限6回到達→増量／目標帯→維持／未達→軽減）。±2.5kg以上の実力変動は週次のプログラム再調整（マクロ）が担い、APREはその不感帯を埋めるマイクロ調整として働く。</p>
       <p><strong>やり方:</strong> 完全な限界まで行かず<strong>「限界2〜3回手前」で止める・上限6回</strong>。筋力向上には完全な追い込みは不要（Robinson 2024のメタ回帰：筋力向上と追い込み度の関係は無視できる程度）で、つぶれるリスクと疲労コストだけが増える。フォームが崩れ始めたらそこで終了。</p>
-      <p><strong>RPE（主観的強度）について:</strong> 本アプリはRPEの入力・RPEによる1RM推定を行わない。主観は同じ内容でも日によってブレるため参考程度に留め、<strong>「計画を遂行できたか」「AMRAPで何回できたか」「MAXテストで何kg挙がったか」という客観的事実だけ</strong>でプログラムを調整する（遂行実績主義）。</p>
+      <p><strong>RPE（主観的強度）について:</strong> 本アプリはRPEの入力・RPEによる1RM推定を行わない。主観は同じ内容でも日によってブレるため参考程度に留め、<strong>「計画を遂行できたか」「AMRAPで何回できたか」「MAXテストで何kg挙がったか」という客観的事実だけ</strong>でプログラムを調整する（遂行実績主義）。ここでの「遂行」とは<strong>正しいフォームでの遂行</strong>を指す — フォームを崩して数字をクリアした記録は偽データとなり、自動調整を実力以上の方向へ狂わせる（フォームファーストの項を参照）。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
