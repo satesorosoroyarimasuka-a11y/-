@@ -1098,7 +1098,7 @@ function generateProgram() {
 
   const program = buildProgramSessions(profile, rmForWeek);
 
-  state.program = { profile, sessions: program, generated: new Date().toISOString(), buildVersion: BUILD_VERSION };
+  state.program = { profile, sessions: program, generated: new Date().toISOString(), buildVersion: BUILD_VERSION, formReset: true };
   save();
 
   // 実現可能性チェック & 最適化
@@ -2024,21 +2024,22 @@ function planRecalibration(session, loggedSets) {
 // 「今日以降の未実施・未記録セッション」だけを最新ロジックで組み直す。
 // 過去のセッション・記録・完了状態・各週の計画1RM(rm1)はそのまま維持する。
 // 生成ロジックを変更したらこの番号を上げること
-const BUILD_VERSION = 38;
+const BUILD_VERSION = 40;
 function migrateProgramBuild() {
   if (!state.program || !state.profile) return false;
   if ((state.program.buildVersion || 0) >= BUILD_VERSION) return false;
-  // 反映は「来週の月曜」から。進行中の週は現行メニューのまま完了させる
-  // （週の途中で構成が変わると疲労配分と記録の比較が崩れるため）
-  const now = new Date();
-  const cut = new Date(now);
-  cut.setDate(now.getDate() + (((8 - now.getDay()) % 7) || 7));
-  const today = cut.toISOString().split('T')[0];
+  // 反映は今日から（未実施の今日以降のセッションのみ差し替え）
+  const today = new Date().toISOString().split('T')[0];
   // 各週のrm1は既存セッションから引き継ぐ（実力推定・再調整の結果を保持）
   const rmByWeek = {};
   state.program.sessions.forEach(s => { if (rmByWeek[s.weekIdx] == null) rmByWeek[s.weekIdx] = s.rm1; });
   let lastRM = state.profile.currentMax;
-  const rmForWeek = w => { if (rmByWeek[w] != null) lastRM = rmByWeek[w]; return lastRM; };
+  // フォームリセット（一度だけ）: 厳格フォーム移行に伴い計画1RMを5%引き下げる。
+  // 旧記録はバウンド等を含む「緩いフォーム基準」のため、そのままでは重すぎて
+  // フォーム練習が成立しない。タッチ&ゴー→ストリクトの実力差はおよそ3〜5%。
+  // 下げ幅の過不足はAMRAP/APRE・未達検知・中間MAXテストが客観データで自動補正する
+  const formFactor = state.program.formReset ? 1 : 0.95;
+  const rmForWeek = w => { if (rmByWeek[w] != null) lastRM = rmByWeek[w]; return round125(lastRM * formFactor); };
   const oldByKey = {};
   state.program.sessions.forEach(s => oldByKey[s.date + s.type] = s);
   const rebuilt = buildProgramSessions(state.program.profile || state.profile, rmForWeek);
@@ -2055,6 +2056,7 @@ function migrateProgramBuild() {
   });
   state.program.sessions = rebuilt;
   state.program.buildVersion = BUILD_VERSION;
+  state.program.formReset = true;
   if (state.currentSession) {
     const cs = rebuilt.find(s => s.date === state.currentSession.date && s.type === state.currentSession.type);
     if (cs) state.currentSession = cs;
@@ -3608,7 +3610,7 @@ function init() {
   if (state.program) {
     // 生成ロジックが更新されていれば、今日以降の未実施セッションを新設計で組み直す
     if (migrateProgramBuild()) {
-      setTimeout(() => alert('アプリ更新: 来週の月曜以降のメニューをDUP設計（月:筋肥大8〜10レップ／水:5レップ＋AMRAP／土:高重量シングル特化）＋強化期100%PRチャレンジ＋中間MAXテスト週の構成に組み直しました。今週の残りは現行メニューのまま、過去の記録と計画1RMも引き継いでいます 💪'), 400);
+      setTimeout(() => alert('アプリ更新: 厳格フォーム移行にあわせて今日以降のメニューの計画重量を5%引き下げました（フォームリセット）。バウンドなし・肘伸ばし切りの基準では一時的に扱える重量が下がるのが正常です。下げ幅の過不足はAMRAP・未達検知・中間MAXテストが自動で補正します。過去の記録は保持されています 💪'), 400);
     }
     switchTab('program');
   } else {
