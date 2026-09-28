@@ -564,6 +564,7 @@ let state = JSON.parse(localStorage.getItem('bp-state') || 'null') || {
 // 既存データに欄が無い場合の初期化（後方互換）
 if (!Array.isArray(state.bodyweights)) state.bodyweights = [];
 if (!Array.isArray(state.readiness)) state.readiness = [];
+if (!state.restedSessions) state.restedSessions = {};  // 休養にしたセッション { date+type: true }
 if (state.profile && state.profile.trainingMax == null) state.profile.trainingMax = state.profile.currentMax;
 
 function save() { localStorage.setItem('bp-state', JSON.stringify(state)); }
@@ -1521,7 +1522,7 @@ function renderProgram() {
   for (let w = 0; w < totalWeeks; w++) {
     const wSessions = weeks[w] || [];
     const phName = wSessions[0]?.phaseName || '';
-    const doneCount = wSessions.filter(s => state.completedSessions[s.date + s.type]).length;
+    const doneCount = wSessions.filter(s => state.completedSessions[s.date + s.type] || state.restedSessions[s.date + s.type]).length;
     const isCurrentWeek = isThisWeek(wSessions);
 
     html += `<div class="week-card" ${isCurrentWeek ? 'id="current-week"' : ''}>
@@ -1545,11 +1546,11 @@ function renderProgram() {
         <div class="session-top">
           <div>
             <div class="session-date">${fmtDate(s.date)}</div>
-            <div class="session-type">${s.isMaxDay ? 'MAXテスト' : (dayLabels[s.type] || s.type)}</div>
+            <div class="session-type">${s.isMaxDay ? 'MAXテスト' : (dayLabels[s.type] || s.type)}${isOptionalSession(s) ? ' <span style="color:var(--accent2)">· 任意(休養OK)</span>' : ''}</div>
           </div>
           <div style="text-align:right">
             ${s.isMaxDay ? '<span class="max-day-badge">🏆 MAXテスト</span>' : `<span class="badge ${typeBadges[s.type]}">MAX比${maxPct}%</span>`}
-            ${done ? '<div style="color:var(--green);font-size:12px;margin-top:4px">✓ 完了</div>' : ''}
+            ${done ? '<div style="color:var(--green);font-size:12px;margin-top:4px">✓ 完了</div>' : state.restedSessions[s.date + s.type] ? '<div style="color:var(--accent2);font-size:12px;margin-top:4px">🛌 休養</div>' : ''}
           </div>
         </div>
         <div class="sets-preview">${setsSummary(s)}${s.apreAdjust ? ' | 🔥APRE調整' : ''}${+sessionInol > 0 ? ` <span style="opacity:.6">| INOL ${sessionInol}</span>` : ''}</div>
@@ -1630,6 +1631,24 @@ function renderTraining(session) {
 
   // 当日のレディネスチェック（睡眠・筋肉痛・ストレス → 当日メニュー微調整の提案）
   html += readinessCardHTML(session, logged, done);
+
+  // ディロード週の休養オプション（任意セッションのみ・未実施のときだけ）
+  if (isOptionalSession(session) && !logged && !done) {
+    const restedNow = state.restedSessions[session.date + session.type];
+    if (restedNow) {
+      html += `<div class="card" style="border:1px solid rgba(96,165,250,.35)">
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px">🛌 この日は休養として記録済み</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.6">回復も計画の一部です。休養にしても評価・実施率は下がりません。気が向いたら下のボタンで取り消していつでも実施できます。</div>
+        <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="toggleRestDay()">休養を取り消してやる</button>
+      </div>`;
+    } else {
+      html += `<div class="card" style="border:1px solid rgba(96,165,250,.2)">
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px">🛌 回復週：この日は任意です</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.6">ディロード週はやっても休んでもOK（1週間の完全休養で筋力・筋量は落ちません）。休む場合は下のボタンで記録すると、実施率・分析の対象外になります。</div>
+        <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="toggleRestDay()">🛌 今日は休養にする</button>
+      </div>`;
+    }
+  }
 
   // APRE自動調整が入っている日は理由を明示する（黙って重量を変えない）
   if (session.apreAdjust) {
@@ -1779,6 +1798,7 @@ function completeSession() {
   if (!state.currentSession) return;
   const s = state.currentSession;
   state.completedSessions[s.date + s.type] = true;
+  delete state.restedSessions[s.date + s.type];  // 実施したら休養記録は解除
   save();
   renderProgram();
 
@@ -1882,6 +1902,7 @@ function saveLog() {
   state.records.sort((a,b) => a.date.localeCompare(b.date));
   // 基準1RM(trainingMax)はMAXテスト日の記録でのみ静かに更新する
   maybeUpdateTrainingMax(newRec, s);
+  delete state.restedSessions[s.date + s.type];  // 記録したら休養記録は解除
   save();
 
   closeLogModal();
@@ -2269,18 +2290,40 @@ function fosterMetrics() {
 // セッション実施率（アドヒアランス）。予定日を過ぎたセッションのうち、
 // 完了チェックまたは記録があるものの割合。筋力向上の最大の予測因子は継続率であり、
 // 実施率が低いと計画1RMの進行と実力が乖離してプログラム全体の前提が崩れる。
+// 任意セッション判定: ディロード週(MAXテスト日を除く)とテーパー日(MAX週の月・水)は
+// 「やってもやらなくてもよい」。1〜3週間の完全休養でも筋力・筋量は落ちず、
+// 長期成果は継続群と同等(Ogasawara 2011/2013)。休養は計画的回復でありペナルティを付けない
+function isOptionalSession(s) {
+  return !!s && !s.isMaxDay && (s.phaseName === 'deload' || s.taperWeek);
+}
+
+// 今日のセッションを休養にする/取り消す（任意セッション用）
+function toggleRestDay() {
+  const s = state.currentSession;
+  if (!s) return;
+  const key = s.date + s.type;
+  if (state.restedSessions[key]) delete state.restedSessions[key];
+  else state.restedSessions[key] = true;
+  save();
+  renderTraining(s);
+  renderProgram();
+}
+
 function adherenceStats() {
   if (!state.program) return null;
   const today = new Date().toISOString().split('T')[0];
   const past = state.program.sessions.filter(s => s.date < today);
-  if (past.length < 3) return null; // 少数では割合に意味がない
   const isDone = s => state.completedSessions[s.date + s.type]
     || state.records.some(r => r.key === s.date + '_' + s.type);
-  const done = past.filter(isDone).length;
+  // 母数は「必須セッション + 実施した任意セッション」。
+  // 任意(ディロード週)や休養にした日は、やらなくても未実施に数えない（実施すれば加点）
+  const counted = past.filter(s => isDone(s) || (!isOptionalSession(s) && !state.restedSessions[s.date + s.type]));
+  if (counted.length < 3) return null; // 少数では割合に意味がない
+  const done = counted.filter(isDone).length;
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 14);
   const cutoffStr = cutoff.toISOString().split('T')[0];
-  const recentMissed = past.filter(s => s.date >= cutoffStr && !isDone(s)).length;
-  return { planned: past.length, done, rate: done / past.length * 100, recentMissed };
+  const recentMissed = counted.filter(s => s.date >= cutoffStr && !isDone(s)).length;
+  return { planned: counted.length, done, rate: done / counted.length * 100, recentMissed };
 }
 
 // 指定日以前の最新体重（無ければプロフィール体重）
@@ -3108,7 +3151,7 @@ function renderAnalysis() {
     const adhCol = adh.rate >= 90 ? 'var(--green)' : adh.rate >= 80 ? 'var(--accent2)' : 'var(--yellow)';
     html += `<div class="card"><div class="card-title">📅 セッション実施率</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-        <span style="font-size:13px">予定 ${adh.planned}回中 ${adh.done}回 実施</span>
+        <span style="font-size:13px">予定 ${adh.planned}回中 ${adh.done}回 実施 <span style="color:var(--text2);font-size:11px">(任意・休養日は対象外)</span></span>
         <span style="font-weight:800;color:${adhCol}">${Math.round(adh.rate)}%</span>
       </div>
       <div class="inol-bar-bg"><div class="inol-bar-fill" style="width:${adh.rate}%;background:${adhCol}"></div></div>
@@ -3463,6 +3506,7 @@ function renderTheory() {
       <h3>📅 ウェーブ・ペリオダイゼーション</h3>
       <p>週3回の頻度で「蓄積 → 強化 → ピーキング → ディロード」の4フェーズを繰り返し、さらに週の中でも<strong>DUP（日次波状ピリオダイゼーション）</strong>としてレップ帯を波状に変える: <strong>月曜=筋肥大（70〜77.5%×8回固定）、水曜=5レップ固定（77.5〜87.5%）、土曜=1レップ固定・高重量シングル特化（84〜95%）</strong>。メタ分析では波状型は直線型を上回り（筋力+23.7〜24.5% vs +17.0〜18.0%）、その優位性は鍛錬者のベンチプレスで特に顕著と報告されている。${weeks ? `本プログラムは${weeks}週間構成。` : ''}</p>
       <p>さらにフェーズ内でも<strong>毎週+2.5%のステップローディング</strong>を行う（例: 強化期トップシングル90→92.5→95%、ワーク87.5→90→92.5%）。ディロードで区切って少し下げ、次の3週で前回を超えていく古典的ウェーブ構造で、毎週ほぼ確実に扱う重量が変わる。強度が上がる週はINOL自動調整がセット数を絞るため、「量が多く軽い週 → 量が少なく重い週」という周期化の王道が自然に成立する。</p>
+      <p><strong>🛌 ディロード週は任意（休養OK）:</strong> ディロード週のセッション（MAXテスト日を除く）は、やっても完全に休んでもよい。ベンチプレスの研究では<strong>3週間の完全休養を挟んでも筋力・筋量は落ちず、長期の伸びは継続群と同等</strong>（Ogasawara 2011/2013）。1週間の休養で失うものは実質ゼロで、疲労回復というディロードの目的はむしろ確実に達成される。休む場合はトレーニング画面で「休養にする」を記録すれば実施率・コンディション分析の対象外になる（睡眠・栄養はそのまま維持すること）。MAXテスト週の月・水も同様に任意だが、<strong>土曜のMAXテストだけは実施する</strong>。</p>
     </div>
     <div class="divider"></div>
     <div class="theory-section">
