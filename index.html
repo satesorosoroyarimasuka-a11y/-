@@ -432,6 +432,26 @@
       </div>
     </div>
     <div class="card">
+      <div class="card-title">サブ種目の実績MAX（ベンチ後に実施）</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>デッドリフト (kg)</label>
+          <input type="number" id="s-max-deadlift" placeholder="例: 120" step="2.5">
+        </div>
+        <div class="form-group">
+          <label>OHP (kg)</label>
+          <input type="number" id="s-max-ohp" placeholder="例: 40" step="2.5">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>スクワット (kg)</label>
+          <input type="number" id="s-max-squat" placeholder="例: 60" step="2.5">
+        </div>
+        <div class="form-group"></div>
+      </div>
+    </div>
+    <div class="card">
       <div class="card-title">プログラム設定</div>
       <div class="form-group">
         <label>スタート日</label>
@@ -566,6 +586,7 @@ if (!Array.isArray(state.bodyweights)) state.bodyweights = [];
 if (!Array.isArray(state.readiness)) state.readiness = [];
 if (!state.restedSessions) state.restedSessions = {};  // 休養にしたセッション { date+type: true }
 if (state.profile && state.profile.trainingMax == null) state.profile.trainingMax = state.profile.currentMax;
+if (state.profile && !state.profile.subMax) state.profile.subMax = { ohp: 40, squat: 60, deadlift: 120 };  // サブ種目の実績MAX（後方互換の初期値）
 
 function save() { localStorage.setItem('bp-state', JSON.stringify(state)); }
 
@@ -929,6 +950,10 @@ function openSettings() {
   document.getElementById('s-current-max').value = p.currentMax;
   document.getElementById('s-target-max').value = p.targetMax;
   document.getElementById('s-start-date').value = p.startDate;
+  const sm = p.subMax || {};
+  document.getElementById('s-max-deadlift').value = sm.deadlift ?? '';
+  document.getElementById('s-max-ohp').value = sm.ohp ?? '';
+  document.getElementById('s-max-squat').value = sm.squat ?? '';
   updateWeeksProposal();
   document.getElementById('setup-title').textContent = '設定を変更';
   document.getElementById('setup-btn').textContent = 'プログラムを再生成（記録は保持）';
@@ -1062,6 +1087,13 @@ function generateProgram() {
   const currentMax = +document.getElementById('s-current-max').value;
   const targetMax = +document.getElementById('s-target-max').value;
   const startDate = document.getElementById('s-start-date').value;
+  // サブ種目の実績MAX（未入力はこれまでの値 or 初期値）
+  const prevSub = state.profile?.subMax || {};
+  const subMax = {
+    deadlift: +document.getElementById('s-max-deadlift').value || prevSub.deadlift || 120,
+    ohp: +document.getElementById('s-max-ohp').value || prevSub.ohp || 40,
+    squat: +document.getElementById('s-max-squat').value || prevSub.squat || 60,
+  };
 
   if (!age || !weight || !height || !currentMax || !targetMax || !startDate) {
     alert('すべての項目を入力してください'); return;
@@ -1078,7 +1110,7 @@ function generateProgram() {
   // 基準1RM(trainingMax)はMAXテスト日の記録でのみ更新される値。編集モードでは保持し、
   // 新規セットアップ時のみcurrentMax(自己申告実測値)で初期化する。
   const prevTrainingMax = (isEditMode && state.profile) ? state.profile.trainingMax : null;
-  const profile = { age, weight, height, gender, currentMax, targetMax, blockTarget, startDate, totalWeeks,
+  const profile = { age, weight, height, gender, currentMax, targetMax, blockTarget, startDate, totalWeeks, subMax,
     trainingMax: prevTrainingMax != null ? prevTrainingMax : currentMax };
   state.profile = profile;
 
@@ -1295,6 +1327,105 @@ function validateAndOptimize() {
   return report;
 }
 
+// ===== サブ種目（ベンチプレス後に実施）=====
+// 月=OHP+スクワット / 水=OHP(週2回目) / 土=デッドリフト。
+// OHPはプレス筋力としてベンチに波及するため週2回、消耗の大きいDLは翌日休養の土曜に配置し、
+// 下半身種目(SQ⇔DL)の間隔を空けて回復を確保する。
+// 進行はベンチと同じフェーズ・週次ウェーブに連動（蓄積=5レップ・強化=3レップの固定レップ・遂行実績主義）。
+// MAXテスト週は3種目ともMAX測定し、実測が基準MAX(profile.subMax)を更新して以降の計画重量に自動反映される
+const SUB_LIFTS = {
+  deadlift: { name: 'デッドリフト', short: 'DL' },
+  ohp:      { name: 'オーバーヘッドプレス', short: 'OHP' },
+  squat:    { name: 'スクワット', short: 'SQ' },
+};
+const SUB_DAY_LIFTS = { volume: ['ohp', 'squat'], technique: ['ohp'], main: ['deadlift'] };
+
+function subMaxOf(lift) {
+  return state.profile?.subMax?.[lift] || { ohp: 40, squat: 60, deadlift: 120 }[lift];
+}
+
+function buildSubSets(type, phaseName, isMaxDay, taperWeek, phasePos) {
+  const lifts = SUB_DAY_LIFTS[type] || [];
+  const wave = 2.5 * Math.min(phasePos, 2);  // ベンチと同じフェーズ内週次ステップ
+  const out = [];
+  lifts.forEach(lift => {
+    const m = subMaxOf(lift);
+    const L = SUB_LIFTS[lift];
+    // MAXテスト週: 土曜=ベンチMAXの後にDL MAX、月曜=OHP・SQ MAX（ベンチと同じ3試技方式）
+    if (isMaxDay || (taperWeek && type === 'volume')) {
+      // 軽量種目(OHP等)は2.5kg丸めで試技が重複しやすいため、第3試技=必ず現MAX+2.5kg以上、
+      // 第1・第2試技はそこから2.5kg以上の段差を保証する
+      const a3 = Math.max(pctWeight(m, 102.5), m + 2.5);
+      const a2 = Math.min(pctWeight(m, 97), a3 - 2.5);
+      const a1 = Math.min(pctWeight(m, 90), a2 - 2.5);
+      out.push({ lift, weight: a1, reps: 1, test: true, note: `${L.name} 第1試技（確実に）` });
+      out.push({ lift, weight: a2, reps: 1, test: true, note: `${L.name} 第2試技` });
+      out.push({ lift, weight: a3, reps: 1, test: true, isTarget: true, note: `🎯 ${L.name} NEW MAX挑戦` });
+      return;
+    }
+    // MAXテスト週の水曜: 軽い動き確認のみ（OHP MAXは月曜に測定済み・土曜ベンチMAXへ疲労を残さない）
+    if (taperWeek) {
+      for (let i = 0; i < 2; i++) out.push({ lift, weight: pctWeight(m, 60), reps: 3, note: `${L.name} 軽く動き確認（テーパー）` });
+      return;
+    }
+    let pct, sets, reps, note = '';
+    if (phaseName === 'accumulation') { pct = 72.5 + wave; sets = 3; reps = 5; }
+    else if (phaseName === 'intensification') { pct = 80 + wave; sets = 3; reps = 3; }
+    else if (phaseName === 'peaking') { pct = 80; sets = 2; reps = 3; note = '維持・追い込まない（ベンチのピーキング優先）'; }
+    else { /* deload */ pct = 60; sets = 2; reps = 5; note = '軽め・疲労抜き'; }
+    for (let i = 0; i < sets; i++) out.push({ lift, weight: pctWeight(m, pct), reps, note });
+  });
+  return out;
+}
+
+// プログラム一覧用のサブ種目1行要約（例: OHP 30kg×5×3 / SQ 45kg×5×3）
+function subSummary(s) {
+  if (!s.subSets || !s.subSets.length) return '';
+  if (s.subSets.some(x => x.test)) {
+    const names = [...new Set(s.subSets.map(x => SUB_LIFTS[x.lift].short))];
+    return `🏆 ${names.join('・')} MAX測定`;
+  }
+  const parts = [];
+  let cur = null;
+  s.subSets.forEach(x => {
+    if (cur && cur.lift === x.lift && cur.w === x.weight && cur.r === x.reps) cur.n++;
+    else { cur = { lift: x.lift, w: x.weight, r: x.reps, n: 1 }; parts.push(cur); }
+  });
+  return parts.map(p => `${SUB_LIFTS[p.lift].short} ${p.w}kg×${p.r}${p.n > 1 ? `×${p.n}` : ''}`).join(' / ');
+}
+
+// 基準MAX更新後、未実施の今後セッションのサブ種目重量を新MAXで組み直す
+function syncFutureSubSets() {
+  if (!state.program || !state.profile) return;
+  const today = new Date().toISOString().split('T')[0];
+  state.program.sessions.forEach(sess => {
+    const key = sess.date + sess.type;
+    const hasRecord = state.records.some(r => r.key === sess.date + '_' + sess.type);
+    if (sess.date < today || state.completedSessions[key] || hasRecord) return;
+    const phasePos = phaseRunPos(state.profile.totalWeeks, sess.weekIdx);
+    sess.subSets = buildSubSets(sess.type, sess.phaseName, !!sess.isMaxDay, !!sess.taperWeek, phasePos);
+  });
+}
+
+// サブ種目のMAX測定記録(test印つき・1回以上成功)で基準MAXを更新する（遂行実績主義）
+function maybeUpdateSubMax(rec) {
+  if (!state.profile?.subMax || !rec?.subSets) return;
+  const prs = [];
+  rec.subSets.forEach(x => {
+    if (!x.test || !x.reps) return;
+    const w = round25(x.weight);
+    if (w > (state.profile.subMax[x.lift] || 0)) {
+      state.profile.subMax[x.lift] = w;
+      prs.push(`${SUB_LIFTS[x.lift].name} ${w}kg`);
+    }
+  });
+  if (prs.length) {
+    syncFutureSubSets();
+    if (state.program?.profile) state.program.profile.subMax = state.profile.subMax;
+    setTimeout(() => alert(`🎉 サブ種目MAX更新！\n${prs.join(' / ')}\n今後の計画重量を新しいMAXで更新しました。`), 100);
+  }
+}
+
 function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = false, taperWeek = false, phasePos = 0) {
   // フェーズ内週次ステップ(+2.5%/週・3週で頭打ち)。固定%だとrm1の微増(週0.6〜1.25kg)が
   // 2.5kg丸めに吸収され同じ重量が数週間続くため、フェーズ内でも強度を明示的に漸増させる
@@ -1315,7 +1446,8 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
       { weight: pctWeight(rm1, 102.5), reps: 1, note: '🎙️🎯 第3試技 NEW MAX', isTarget: true, commands: true },
     ];
     rackup = null;
-    return { date: dateStr, type, phaseName: 'MAX_TEST', weekIdx, mainSets, rackup, isMaxDay: true, rm1: round25(rm1) };
+    return { date: dateStr, type, phaseName: 'MAX_TEST', weekIdx, mainSets, rackup, isMaxDay: true,
+      subSets: buildSubSets(type, 'MAX_TEST', true, false, phasePos), rm1: round25(rm1) };
   }
 
   if (type === 'volume') {
@@ -1418,7 +1550,8 @@ function buildSession(date, type, rm1, phase, weekIdx, isDeload, isMaxDay = fals
     }
   }
 
-  return { date: dateStr, type, phaseName, weekIdx, mainSets, rackup, isMaxDay: false, taperWeek: !!taperWeek, rm1: round25(rm1) };
+  return { date: dateStr, type, phaseName, weekIdx, mainSets, rackup, isMaxDay: false, taperWeek: !!taperWeek,
+    subSets: buildSubSets(type, phaseName, false, !!taperWeek, phasePos), rm1: round25(rm1) };
 }
 
 // セッションの処方を1行に要約（例: ⚡80kg×1 / 77.5kg×1×4 / 70kg×2）
@@ -1490,6 +1623,7 @@ function renderProgram() {
         <div style="flex:1">
           <div style="font-size:18px;font-weight:800">${p.trainingMax ?? p.currentMax}kg → ${p.targetMax}kg</div>
           <div style="font-size:13px;color:var(--text2)">${p.totalWeeks}週間プログラム</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">サブMAX: DL ${p.subMax?.deadlift ?? '—'} / OHP ${p.subMax?.ohp ?? '—'} / SQ ${p.subMax?.squat ?? '—'} kg</div>
           <div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <span class="badge badge-blue">段階的+1.25〜2.5kg</span>
             <button class="btn btn-outline btn-sm" onclick="openSettings()" style="font-size:11px;padding:4px 10px">設定変更</button>
@@ -1554,6 +1688,7 @@ function renderProgram() {
           </div>
         </div>
         <div class="sets-preview">${setsSummary(s)}${s.apreAdjust ? ' | 🔥APRE調整' : ''}${+sessionInol > 0 ? ` <span style="opacity:.6">| INOL ${sessionInol}</span>` : ''}</div>
+        ${s.subSets?.length ? `<div class="sets-preview" style="margin-top:2px;opacity:.8">＋ ${subSummary(s)}</div>` : ''}
       </div>`;
     });
     html += '</div>';
@@ -1766,6 +1901,38 @@ function renderTraining(session) {
     </div>`;
   });
 
+  // サブ種目（ベンチ後に実施）
+  if (session.subSets && session.subSets.length) {
+    html += `<div class="phase-label">サブ種目（ベンチ後）</div>`;
+    if (session.subSets.some(x => x.test)) {
+      html += `<div class="card" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);padding:12px;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700;color:var(--yellow);margin-bottom:4px">🏆 サブ種目MAX測定</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.6">十分にアップしてから3試技方式でMAX更新を狙います。成功した最高重量が新しい基準MAXになり、今後の計画重量に自動反映されます。フォーム基準はベンチと同じ（完全可動域のみカウント）。</div>
+      </div>`;
+    }
+    let lastLift = null;
+    session.subSets.forEach((set, i) => {
+      if (set.lift !== lastLift) {
+        lastLift = set.lift;
+        html += `<div style="font-size:12px;font-weight:700;color:var(--text2);margin:8px 0 4px">${SUB_LIFTS[set.lift].name}（MAX ${subMaxOf(set.lift)}kg）</div>`;
+      }
+      const subPct = Math.round(set.weight / subMaxOf(set.lift) * 100);
+      const subLogged = logged?.subSets?.[i];
+      const rowStyle = set.isTarget ? 'style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3)"' : '';
+      html += `<div class="set-row" id="subset-${i}" ${rowStyle}>
+        <div class="set-num" style="font-size:11px;${set.isTarget ? 'color:var(--yellow)' : ''}">${SUB_LIFTS[set.lift].short}</div>
+        <div class="set-info">
+          <div class="set-weight" style="${set.isTarget ? 'color:var(--yellow)' : ''}">${set.weight}kg</div>
+          <div class="set-reps">${set.reps}rep · ${subPct}% ${set.note ? '— ' + set.note : ''}</div>
+          ${subLogged ? `<div style="font-size:12px;color:var(--green);margin-top:2px">記録: ${subLogged.weight}kg × ${subLogged.reps}rep</div>` : ''}
+        </div>
+        <button class="set-done ${subLogged ? 'checked' : ''}" onclick="toggleSubSet(${i})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        </button>
+      </div>`;
+    });
+  }
+
   // Log & Complete buttons
   html += `<div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
     <button class="btn btn-outline" onclick="openLogModal()">記録を入力</button>
@@ -1791,6 +1958,18 @@ function toggleSet(idx) {
     // 筋肥大バックオフは低%高レップなので休憩は短め(2分)で十分
     const isHyp = s?.mainSets?.[idx]?.hyp;
     startRest(isHyp ? 120 : heavy ? 240 : (s?.phaseName === 'deload' ? 120 : 180));
+  }
+}
+
+// サブ種目セットのチェック（休憩はMAX試技240秒/通常180秒/ディロード120秒）
+function toggleSubSet(idx) {
+  const btn = document.querySelector(`#subset-${idx} .set-done`);
+  btn.classList.toggle('checked');
+  if (btn.classList.contains('checked')) {
+    restCheckTimestamps.push(Date.now());
+    const s = state.currentSession;
+    const set = s?.subSets?.[idx];
+    startRest(set?.test ? 240 : (s?.phaseName === 'deload' ? 120 : 180));
   }
 }
 
@@ -1839,6 +2018,26 @@ function openLogModal() {
       <span style="color:var(--text2)">rep</span>
     </div>`;
   });
+
+  // サブ種目の記録入力
+  if (s.subSets && s.subSets.length) {
+    html += `<div style="font-size:13px;font-weight:700;margin:10px 0 2px">サブ種目（ベンチ後）</div>`;
+    let lastLift = null;
+    s.subSets.forEach((set, i) => {
+      const ex = existing?.subSets?.[i] || {};
+      if (set.lift !== lastLift) {
+        lastLift = set.lift;
+        html += `<div style="font-size:12px;color:var(--text2);margin:6px 0 2px">${SUB_LIFTS[set.lift].name}${set.test ? '（MAX測定: 挙がった実際の重量を入力）' : ''}</div>`;
+      }
+      html += `<div class="log-input-row">
+        <div style="font-size:11px;font-weight:600;width:28px">${set.isTarget ? '🎯' : SUB_LIFTS[set.lift].short}</div>
+        <input type="number" id="log-sw-${i}" placeholder="${set.weight}" value="${ex.weight || ''}" step="2.5" style="font-size:14px">
+        <span style="color:var(--text2)">kg ×</span>
+        <input type="number" id="log-sr-${i}" placeholder="${set.reps}" value="${ex.reps || ''}" style="font-size:14px">
+        <span style="color:var(--text2)">rep</span>
+      </div>`;
+    });
+  }
 
   html += `<div style="background:var(--bg3);border-radius:10px;padding:12px;margin-top:4px;font-size:12px;line-height:1.7;color:var(--text2)">
     <div><strong>記録は「正しいフォームで遂行できたか」がすべてです</strong></div>
@@ -1897,11 +2096,23 @@ function saveLog() {
 
   // Remove existing
   state.records = state.records.filter(r => r.key !== logKey);
-  const newRec = { key: logKey, date: s.date, type: s.type, sets, rpe, fatigue, notes, restActual, missed, timestamp: Date.now() };
+  // サブ種目の記録（計画通りは空欄=計画値で記録。MAX試技の失敗は実際に挙がった重量を入力）
+  const subSets = (s.subSets || []).map((set, i) => {
+    const sl = {
+      lift: set.lift,
+      weight: +document.getElementById(`log-sw-${i}`)?.value || set.weight,
+      reps: +document.getElementById(`log-sr-${i}`)?.value || set.reps,
+    };
+    if (set.test) sl.test = true;
+    return sl;
+  });
+  const newRec = { key: logKey, date: s.date, type: s.type, sets, subSets, rpe, fatigue, notes, restActual, missed, timestamp: Date.now() };
   state.records.push(newRec);
   state.records.sort((a,b) => a.date.localeCompare(b.date));
   // 基準1RM(trainingMax)はMAXテスト日の記録でのみ静かに更新する
   maybeUpdateTrainingMax(newRec, s);
+  // サブ種目のMAX測定記録で基準MAXを更新し、今後の計画重量へ反映
+  maybeUpdateSubMax(newRec);
   delete state.restedSessions[s.date + s.type];  // 記録したら休養記録は解除
   save();
 
@@ -2045,10 +2256,12 @@ function planRecalibration(session, loggedSets) {
 // 「今日以降の未実施・未記録セッション」だけを最新ロジックで組み直す。
 // 過去のセッション・記録・完了状態・各週の計画1RM(rm1)はそのまま維持する。
 // 生成ロジックを変更したらこの番号を上げること
-const BUILD_VERSION = 40;
+const BUILD_VERSION = 41;  // 41: サブ種目(DL/OHP/SQ)追加
 function migrateProgramBuild() {
   if (!state.program || !state.profile) return false;
   if ((state.program.buildVersion || 0) >= BUILD_VERSION) return false;
+  // サブ種目のMAXが未設定なら初期値を入れる（buildSubSetsが参照する）
+  if (!state.profile.subMax) state.profile.subMax = { ohp: 40, squat: 60, deadlift: 120 };
   // 反映は今日から（未実施の今日以降のセッションのみ差し替え）
   const today = new Date().toISOString().split('T')[0];
   // 各週のrm1は既存セッションから引き継ぐ（実力推定・再調整の結果を保持）
@@ -2059,6 +2272,7 @@ function migrateProgramBuild() {
   // 旧記録はバウンド等を含む「緩いフォーム基準」のため、そのままでは重すぎて
   // フォーム練習が成立しない。タッチ&ゴー→ストリクトの実力差はおよそ3〜5%。
   // 下げ幅の過不足はAMRAP/APRE・未達検知・中間MAXテストが客観データで自動補正する
+  const appliedFormReset = !state.program.formReset;  // 今回の移行でフォームリセットを適用したか（告知文の出し分け用）
   const formFactor = state.program.formReset ? 1 : 0.95;
   const rmForWeek = w => { if (rmByWeek[w] != null) lastRM = rmByWeek[w]; return round125(lastRM * formFactor); };
   const oldByKey = {};
@@ -2083,7 +2297,11 @@ function migrateProgramBuild() {
     if (cs) state.currentSession = cs;
   }
   save();
-  return true;
+  // 移行内容に応じた告知文を返す（呼び出し側がalert表示）
+  let msg = 'アプリ更新: ベンチプレス後のサブ種目を追加しました（月=OHP+スクワット / 水=OHP / 土=デッドリフト）。ベンチと同じフェーズ・週次ウェーブに連動し、MAXテスト週は3種目ともMAX測定して記録更新を狙います。各種目の実績MAXは設定画面で変更できます。';
+  if (appliedFormReset) msg += '\nあわせて厳格フォーム移行のため、今日以降のベンチ計画重量を5%引き下げています（フォームリセット）。';
+  msg += '\n過去の記録は保持されています💪';
+  return msg;
 }
 
 // 提案を実際に適用する
@@ -3510,6 +3728,12 @@ function renderTheory() {
     </div>
     <div class="divider"></div>
     <div class="theory-section">
+      <h3>🏋️ サブ種目（ベンチ後: デッドリフト・OHP・スクワット）</h3>
+      <p>ベンチプレスの後に<strong>月=OHP+スクワット / 水=OHP（週2回目） / 土=デッドリフト</strong>を実施。OHPは肩・上腕三頭筋のプレス筋力としてベンチに直接波及するため週2回。デッドリフト・スクワットは全身の基礎筋力と体幹剛性（ベンチのアーチ・脚駆動の土台）を作る。最も消耗の大きいデッドリフトは翌日が休養になる土曜に置き、下半身種目（スクワット⇔デッドリフト）の間隔を空けて回復を確保する。</p>
+      <p><strong>進行はベンチと同じ遂行実績主義:</strong> 各種目の実績MAXを基準に、蓄積期=72.5〜77.5%×5回×3セット、強化期=80〜85%×3回×3セットの固定レップで、ベンチと同じ毎週+2.5%ウェーブに連動。<strong>MAXテスト週は3種目ともMAX測定</strong>（月曜にOHP・スクワット、土曜にベンチMAXの後デッドリフト・各3試技方式で102.5%のNEW MAXに挑戦）し、成功した実測が基準MAXを更新して以降の計画重量に自動反映される。1レップの基準もベンチ同様に完全可動域のみカウント（デッドリフトの床バウンド・スクワットの浅いしゃがみ・OHPの押し切り不足はノーカウント）。ピーキング週は維持量に落とし、ディロード・テーパー週は軽めで任意（休養OK）。</p>
+    </div>
+    <div class="divider"></div>
+    <div class="theory-section">
       <h3>🎯 フォームファースト（質の高いレップ主義）</h3>
       <p>本プログラムの大前提: <strong>すべてのセット・レップは「正しいフォームの練習」であり、重量や回数をこなすこと自体が目的ではない</strong>。筋力発揮は運動学習（スキル）であり、神経系は挙げるたびに「そのフォーム」を学習する。正しいフォームの反復だけが正しい運動パターンを強化し、これが結果的に筋肥大と重量アップへの最短経路になる。</p>
       <p>胸でバウンドさせる等のチートで数字をクリアしても、①ボトム（最も刺激の強い位置）の張力を反動で逃がすため筋肥大・神経系刺激がともに減る、②「悪い動作」を練習して重量が伸びるほど破綻する、③<strong>水増しされた記録が自動調整を狂わせて重すぎるメニューを生む</strong>、の三重の理由で必ず頭打ちになる。したがって記録にカウントしてよいのは正しいフォームで挙げたレップだけ。AMRAPも「フォームが崩れる手前」が終了ラインで、これは主観的なRPEより客観的な打ち切り基準でもある。</p>
@@ -3653,8 +3877,9 @@ function init() {
 
   if (state.program) {
     // 生成ロジックが更新されていれば、今日以降の未実施セッションを新設計で組み直す
-    if (migrateProgramBuild()) {
-      setTimeout(() => alert('アプリ更新: 厳格フォーム移行にあわせて今日以降のメニューの計画重量を5%引き下げました（フォームリセット）。バウンドなし・肘伸ばし切りの基準では一時的に扱える重量が下がるのが正常です。下げ幅の過不足はAMRAP・未達検知・中間MAXテストが自動で補正します。過去の記録は保持されています 💪'), 400);
+    const migMsg = migrateProgramBuild();
+    if (migMsg) {
+      setTimeout(() => alert(migMsg), 400);
     }
     switchTab('program');
   } else {
