@@ -464,6 +464,7 @@
       </div>
     </div>
     <button class="btn btn-primary" id="setup-btn" onclick="generateProgram()">プログラムを自動生成</button>
+    <button class="btn btn-outline" id="setup-fresh-btn" style="display:none;margin-top:10px;border-color:rgba(245,158,11,.5);color:var(--yellow)" onclick="generateProgramFresh()">🆕 新プログラムとして開始（一からやり直す）</button>
     <button class="btn btn-outline" id="setup-cancel-btn" style="display:none;margin-top:10px" onclick="cancelSettings()">キャンセル</button>
   </div>
 
@@ -939,6 +940,7 @@ function importData(event) {
 
 // ===== SETTINGS =====
 let isEditMode = false;
+let isFreshStart = false;  // 新プログラム開始モード（進行状況をリセットして入力値を新基準にする）
 
 function openSettings() {
   isEditMode = true;
@@ -959,6 +961,7 @@ function openSettings() {
   document.getElementById('setup-btn').textContent = 'プログラムを再生成（記録は保持）';
   document.getElementById('setup-edit-banner').style.display = 'block';
   document.getElementById('setup-cancel-btn').style.display = 'block';
+  document.getElementById('setup-fresh-btn').style.display = 'block';
 
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -970,6 +973,17 @@ function openSettings() {
 function cancelSettings() {
   isEditMode = false;
   switchTab('program');
+}
+
+// 新プログラムとして一から開始（MAX測定し直し等でブロックを仕切り直す用）。
+// 既存の「再生成（記録を引き継いで修正）」は継続モードとして残し、こちらは
+// 前プログラムの実力推定(trainingMax)を引き継がず入力値をそのまま新基準にし、
+// 完了・休養・進行中セッションをリセットする。過去の記録・分析履歴は保持される。
+function generateProgramFresh() {
+  const cur = document.getElementById('s-current-max').value;
+  if (!confirm(`新プログラムとして一から開始しますか？\n\n・入力した実績1RM（${cur || '未入力'}kg）とサブ種目MAXがそのまま新しい基準になります（前プログラムの推定は引き継ぎません）\n・完了・休養・自動調整などの進行状況はリセットされます\n・過去の記録と分析の履歴は残ります`)) return;
+  isFreshStart = true;
+  try { generateProgram(); } finally { isFreshStart = false; }  // 入力エラーで中断してもモードを残さない
 }
 
 // ===== 週数自動算出（実力レベル・年齢に応じたエビデンスベースのペース）=====
@@ -1107,9 +1121,9 @@ function generateProgram() {
   const totalWeeks = rec.weeks;
   const blockTarget = rec.milestone; // nullなら1ブロックで目標到達、非nullなら分割ロードマップの第1ブロック目標
 
-  // 基準1RM(trainingMax)はMAXテスト日の記録でのみ更新される値。編集モードでは保持し、
-  // 新規セットアップ時のみcurrentMax(自己申告実測値)で初期化する。
-  const prevTrainingMax = (isEditMode && state.profile) ? state.profile.trainingMax : null;
+  // 基準1RM(trainingMax)はMAXテスト日の記録でのみ更新される値。編集モード(継続)では保持し、
+  // 新規セットアップ・新プログラム開始時はcurrentMax(自己申告実測値)で初期化する。
+  const prevTrainingMax = (isEditMode && !isFreshStart && state.profile) ? state.profile.trainingMax : null;
   const profile = { age, weight, height, gender, currentMax, targetMax, blockTarget, startDate, totalWeeks, subMax,
     trainingMax: prevTrainingMax != null ? prevTrainingMax : currentMax };
   state.profile = profile;
@@ -1119,11 +1133,20 @@ function generateProgram() {
     state.records = [];
     state.completedSessions = {};
   }
+  // 新プログラム開始: 記録・分析履歴は残し、進行状況(完了/休養/進行中セッション)だけ完全リセット。
+  // これにより「継続されたプログラム」ではなく、入力したMAXを基準にした仕切り直しブロックになる
+  if (isFreshStart) {
+    state.completedSessions = {};
+    state.restedSessions = {};
+    state.currentSession = null;
+  }
   isEditMode = false;
+  isFreshStart = false;
   document.getElementById('setup-title').textContent = '初期設定';
   document.getElementById('setup-btn').textContent = 'プログラムを自動生成';
   document.getElementById('setup-edit-banner').style.display = 'none';
   document.getElementById('setup-cancel-btn').style.display = 'none';
+  document.getElementById('setup-fresh-btn').style.display = 'none';
 
   // 週ごとの推定1RM（1.25〜2.5kg刻みの段階的進行、ディロード週は据え置き）
   // 分割ロードマップの場合は第1ブロック目標(blockTarget)に向けて生成する
