@@ -825,42 +825,82 @@ function lastRecordOfType(type, beforeDate) {
 }
 
 // ===== 休憩タイマー =====
+// 実時刻(終了時刻)基準でカウントする。毎秒-1のカウンタ方式だと、iOSでアプリを閉じたり
+// 別アプリを見ている間はJSタイマーが停止し、戻ったとき時間が進んでいないため。
+// 終了時刻はlocalStorageにも保存し、アプリを完全に閉じて開き直しても休憩は実時間で継続する
 let restTimer = null;
-let restRemaining = 0;
+let restEndAt = 0;    // 休憩終了の実時刻(ms)。0=タイマー停止中
 let restTotal = 0;
+
+function restRemainingSec() {
+  return Math.max(0, Math.ceil((restEndAt - Date.now()) / 1000));
+}
+
+function saveRestState() {
+  try { localStorage.setItem('bp-rest', JSON.stringify({ endAt: restEndAt, total: restTotal })); } catch (e) {}
+}
 
 function startRest(sec) {
   stopRest();
   restTotal = sec;
-  restRemaining = sec;
+  restEndAt = Date.now() + sec * 1000;
+  saveRestState();
   document.getElementById('restBanner').classList.add('open');
   updateRestUI();
-  restTimer = setInterval(() => {
-    restRemaining--;
-    if (restRemaining <= 0) { stopRest(); return; }
-    updateRestUI();
-  }, 1000);
+  restTimer = setInterval(tickRest, 1000);
+}
+
+function tickRest() {
+  if (restRemainingSec() <= 0) { stopRest(); return; }
+  updateRestUI();
 }
 
 function addRest(sec) {
   if (restTimer === null) return;
-  restRemaining += sec;
+  restEndAt += sec * 1000;
   restTotal += sec;
+  saveRestState();
   updateRestUI();
 }
 
 function stopRest() {
   if (restTimer !== null) { clearInterval(restTimer); restTimer = null; }
+  restEndAt = 0;
+  try { localStorage.removeItem('bp-rest'); } catch (e) {}
   document.getElementById('restBanner').classList.remove('open');
 }
 
 function updateRestUI() {
-  const m = Math.floor(restRemaining / 60);
-  const s = restRemaining % 60;
+  const remaining = restRemainingSec();
+  const m = Math.floor(remaining / 60);
+  const s = remaining % 60;
   document.getElementById('restTime').textContent = `${m}:${String(s).padStart(2,'0')}`;
-  const pct = restTotal ? Math.max(0, restRemaining / restTotal * 100) : 0;
+  const pct = restTotal ? Math.max(0, remaining / restTotal * 100) : 0;
   document.getElementById('restBar').style.width = pct + '%';
 }
+
+// アプリに戻ってきた瞬間、実時刻で表示を即同期する（バックグラウンド中はintervalが止まるため）
+function resumeRestTimer() {
+  if (!restEndAt) return;
+  if (restRemainingSec() <= 0) stopRest();
+  else updateRestUI();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeRestTimer(); });
+window.addEventListener('pageshow', resumeRestTimer);
+
+// アプリを完全に閉じて開き直した場合の復元（終了時刻が未来なら休憩を再開表示）
+(function restoreRestState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('bp-rest') || 'null');
+    if (!saved || !saved.endAt) return;
+    if (saved.endAt <= Date.now()) { localStorage.removeItem('bp-rest'); return; }
+    restTotal = saved.total || 0;
+    restEndAt = saved.endAt;
+    document.getElementById('restBanner').classList.add('open');
+    updateRestUI();
+    restTimer = setInterval(tickRest, 1000);
+  } catch (e) {}
+})();
 
 // ===== データのバックアップ／復元 =====
 // ファイルダウンロードの共通処理（JSONバックアップ・CSV出力で共用）
